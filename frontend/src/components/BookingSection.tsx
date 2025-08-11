@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from '../../firebase';
 import { DayPicker } from "react-day-picker";
@@ -6,6 +6,7 @@ import "react-day-picker/dist/style.css";
 import { ptBR } from "date-fns/locale";
 
 type Pacote = {
+  id?: string;
   nome: string;
   tipo: "brunch" | "trilha" | "experiencia";
   precoAdulto: number;
@@ -16,39 +17,13 @@ type Pacote = {
   limite?: number;
 };
 
-const PACOTES: Pacote[] = [
-  {
-    nome: "Brunch Gastronômico",
-    tipo: "brunch",
-    precoAdulto: 115,
-    precoCrianca: 40,
-    precoBariatrica: 80,
-    horarios: ["09:00", "11:00", "13:00"],
-    dias: [0, 1, 2, 3, 4, 5, 6],
-    limite: 30,
-  },
-  {
-    nome: "Trilha Ecológica",
-    tipo: "trilha",
-    precoAdulto: 30,
-    precoCrianca: 15,
-    precoBariatrica: 0,
-    dias: [0, 1, 2, 3, 4, 5, 6],
-  },
-  {
-    nome: "Brunch + trilha",
-    tipo: "experiencia",
-    precoAdulto: 140,
-    precoCrianca: 55,
-    precoBariatrica: 0,
-    horarios: ["09:00", "11:00", "13:00"],
-    dias: [0, 1, 2, 3, 4, 5, 6],
-    limite: 30,
-  },
-];
-
 export function BookingSection() {
+  // Busca dos pacotes no Firestore
+  const [pacotes, setPacotes] = useState<Pacote[]>([]);
+  const [loadingPacotes, setLoadingPacotes] = useState(true);
   const [selectedPackage, setSelectedPackage] = useState<number>(0);
+
+  // Formulário
   const [nome, setNome] = useState<string>("");
   const [email, setEmail] = useState<string>("");
   const [telefone, setTelefone] = useState<string>("");
@@ -64,17 +39,82 @@ export function BookingSection() {
   const [formaPagamento, setFormaPagamento] = useState<"CREDIT_CARD" | "PIX">("CREDIT_CARD");
   const [vagasRestantes, setVagasRestantes] = useState<number | null>(null);
 
-  // Novos estados para armazenar dados do PIX
+  // PIX
   const [pixKey, setPixKey] = useState<string | null>(null);
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
   const [expirationDate, setExpirationDate] = useState<string | null>(null);
 
-  const pacote = PACOTES[selectedPackage];
+  // BUSCA PACOTES FIRESTORE
+  useEffect(() => {
+    async function fetchPacotes() {
+      try {
+        const snap = await getDocs(collection(db, "pacotes"));
+        const arr: Pacote[] = snap.docs.map(doc => {
+          const d = doc.data();
+          return {
+            id: doc.id,
+            nome: d.nome,
+            tipo: d.tipo,
+            precoAdulto: Number(d.precoAdulto),
+            precoCrianca: Number(d.precoCrianca),
+            precoBariatrica: Number(d.precoBariatrica),
+            horarios: d.horarios ?? [],
+            dias: Array.isArray(d.dias) ? d.dias : [],
+            limite: d.limite !== undefined ? Number(d.limite) : undefined,
+          };
+        });
+        setPacotes(arr);
+      } catch (err) {
+        setPacotes([]);
+      } finally {
+        setLoadingPacotes(false);
+      }
+    }
+    fetchPacotes();
+  }, []);
+
+  // Enquanto carrega os pacotes
+  if (loadingPacotes) {
+    return (
+      <section id="reservas" className="py-16 bg-[#F7FAEF]">
+        <div className="container mx-auto px-4">
+          <div className="max-w-2xl mx-auto text-center mb-10">
+            <span className="text-green-600 font-semibold text-xs uppercase tracking-widest">
+              RESERVE SEU PASSEIO
+            </span>
+            <h2 className="font-heading text-3xl md:text-4xl font-bold text-[#8B4F23] mt-2 mb-1">
+              Carregando pacotes...
+            </h2>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // Se não achar nenhum pacote
+  if (pacotes.length === 0) {
+    return (
+      <section id="reservas" className="py-16 bg-[#F7FAEF]">
+        <div className="container mx-auto px-4">
+          <div className="max-w-2xl mx-auto text-center mb-10">
+            <span className="text-green-600 font-semibold text-xs uppercase tracking-widest">
+              RESERVE SEU PASSEIO
+            </span>
+            <h2 className="font-heading text-3xl md:text-4xl font-bold text-[#8B4F23] mt-2 mb-1">
+              Nenhum pacote disponível para reserva.
+            </h2>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  // Formulário normal
+  const pacote = pacotes[selectedPackage];
   const total = adultos * pacote.precoAdulto + criancas * pacote.precoCrianca + bariatrica * pacote.precoBariatrica;
   const allowedDays = (day: Date) => pacote.dias.includes(day.getDay());
   const horariosDisponiveis = pacote.horarios || [];
 
-  // Função para verificar vagas automaticamente (só para pacotes com horário e limite definidos)
   async function verificarVagas(pacote: Pacote, data: Date | undefined, horario: string) {
     if (!data || !horario || !pacote.limite) {
       setVagasRestantes(null);
@@ -97,19 +137,16 @@ export function BookingSection() {
       const restantes = pacote.limite - total;
       setVagasRestantes(restantes);
     } catch (error) {
-      console.error("Erro ao verificar vagas:", error);
       setVagasRestantes(null);
     }
   }
 
-  // Atualiza pacote selecionado
   function handlePackage(idx: number) {
     setSelectedPackage(idx);
     setHorario("");
     setVagasRestantes(null);
-    // Só verifica se já tem data e horário selecionados
-    if (selectedDay && PACOTES[idx].horarios && horario) {
-      verificarVagas(PACOTES[idx], selectedDay, horario);
+    if (selectedDay && pacotes[idx].horarios && horario) {
+      verificarVagas(pacotes[idx], selectedDay, horario);
     }
   }
 
@@ -140,8 +177,10 @@ export function BookingSection() {
 
     try {
       const dataStr = selectedDay.toISOString().slice(0, 10);
-      // Monta o filtro da query para busca de reservas
-      const whereFilters = [where("data", "==", dataStr)];
+      const whereFilters = [
+        where("data", "==", dataStr),
+        where("status", "==", "pago"),
+      ];
       if (horariosDisponiveis.length > 0) {
         whereFilters.push(where("horario", "==", horario));
       }
@@ -154,10 +193,8 @@ export function BookingSection() {
         totalReservas += dados.participantes || 0;
       });
 
-      const limite = pacote.limite ?? 30; // Default para brunch e experiencia, para trilha é ilimitado
-
+      const limite = pacote.limite ?? 30;
       const totalParticipantes = adultos + criancas + bariatrica + naoPagante;
-      // Só bloqueia caso exista limite definido!
       if (pacote.limite && (totalReservas + totalParticipantes > limite)) {
         alert(`Limite de ${limite} pessoas por horário já atingido. Por favor, escolha outro horário.`);
         setLoading(false);
@@ -165,29 +202,23 @@ export function BookingSection() {
       }
       setVagasRestantes(pacote.limite ? limite - totalReservas : null);
 
-      // Monta o payload do POST, só envia "horario" se houver horário disponível
-    const payload: any = {
-  nome,
-  email,
-  valor: total,
-  cpf,
-  telefone,
-  atividade: pacote.nome,
-  data: dataStr,
-  participantes: totalParticipantes,
-  adultos,
-  bariatrica,
-  criancas,
-  naoPagante,
-  billingType: formaPagamento,
-  horario: horariosDisponiveis.length > 0 ? horario : "Trilha", // <- aqui está o segredo
-};
+      const payload: any = {
+        nome,
+        email,
+        valor: total,
+        cpf,
+        telefone,
+        atividade: pacote.nome,
+        data: dataStr,
+        participantes: totalParticipantes,
+        adultos,
+        bariatrica,
+        criancas,
+        naoPagante,
+        billingType: formaPagamento,
+        horario: horariosDisponiveis.length > 0 ? horario : "Trilha",
+      };
 
-
-      // LOG para debugging:
-      // console.log("Enviando para o backend:", payload);
-
-      // Faz a requisição
       const rawResponse = await fetch("https://backend-production-ce20.up.railway.app/criar-cobranca", {
         method: "POST",
         headers: {
@@ -199,8 +230,6 @@ export function BookingSection() {
       const resposta = await rawResponse.json().catch(() => ({}));
 
       if (!rawResponse.ok) {
-        // Tenta pegar o erro do backend, se houver
-        console.error("Backend retornou erro", resposta);
         alert("Erro ao criar a cobrança: " + (resposta?.message || rawResponse.statusText));
         setLoading(false);
         return;
@@ -220,14 +249,18 @@ export function BookingSection() {
       }
 
     } catch (error) {
-      console.error("Erro ao buscar reservas:", error);
       alert("Erro ao verificar disponibilidade. Tente novamente.");
     } finally {
       setLoading(false);
     }
   }
 
-  // Renderização JSX igual ao seu original
+  const blockedDates =["2025-08-12"];
+  function isDayBlocked (day: Date) {
+    const dayStr = day.toISOString().slice(0,10);
+    return blockedDates.includes(dayStr);
+  }
+
   return (
     <section id="reservas" className="py-16 bg-[#F7FAEF]">
       <div className="container mx-auto px-4">
@@ -246,9 +279,9 @@ export function BookingSection() {
               Escolha seu Pacote:
             </label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6">
-              {PACOTES.map((pkg, idx) => (
+              {pacotes.map((pkg, idx) => (
                 <div
-                  key={idx}
+                  key={pkg.id || idx}
                   className={`border-2 p-4 rounded-xl text-center cursor-pointer transition ${
                     selectedPackage === idx ? "border-[#8B4F23] bg-[#F7FAEF]" : "border-gray-200"
                   }`}
@@ -264,7 +297,6 @@ export function BookingSection() {
                 </div>
               ))}
             </div>
-
             {/* Dados pessoais */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <div>
@@ -329,7 +361,7 @@ export function BookingSection() {
                   today: "bg-[#e7dfd7] text-[#8B4F23] font-bold",
                   disabled: "bg-gray-100 text-gray-400 cursor-not-allowed"
                 }}
-                disabled={(day) => !allowedDays(day)}
+                disabled={(day) => !allowedDays(day) || isDayBlocked(day)}
                 footer={!selectedDay && <span className="text-xs text-red-400">Selecione uma data válida.</span>}
                 styles={{
                   root: { width: "100%", maxWidth: "100%", margin: "32px auto" },
@@ -372,7 +404,6 @@ export function BookingSection() {
                     <option key={h} value={h}>{h}</option>
                   ))}
                 </select>
-                {/* Exibir vagas restantes */}
                 {vagasRestantes !== null && (
                   <p className={`text-sm mt-2 ${vagasRestantes <= 0 ? "text-red-600" : "text-green-600 font-bold"}`}>
                     {vagasRestantes <= 0

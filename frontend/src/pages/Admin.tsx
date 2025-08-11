@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { AdminSidebar } from "../components/AdminSidebar.tsx";
 import { AdminMainContentHeader } from "../components/AdminMainContent.tsx";
 import AdminDashboard from "../components/AdminDashboard.tsx";
 import { OpenAgendaModal } from "../components/AdminModal.tsx";
@@ -23,7 +22,7 @@ export function Admin() {
   return (
     <>
       <main>
-        <AdminSidebar />
+
         <AdminMainContentHeader />
         <AdminDashboard />
 
