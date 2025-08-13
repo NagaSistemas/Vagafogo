@@ -81,7 +81,7 @@ async function criarCobrancaHandler(req, res) {
             console.log("🔁 Cliente encontrado:", customerId);
         }
         else {
-            // 👤 Criar novo cliente
+            // 👤 Criar novo cliente com notificações desativadas
             const customerCreate = await fetch("https://api.asaas.com/v3/customers", {
                 method: "POST",
                 headers: {
@@ -96,14 +96,26 @@ async function criarCobrancaHandler(req, res) {
                     notificationDisabled: true,
                 }),
             });
-            const customerData = await customerCreate.json();
-            if (!customerCreate.ok) {
-                console.error("❌ Erro ao criar cliente no Asaas:", customerData);
-                res.status(400).json({ status: "erro", erro: customerData });
+            let customerData = null;
+            try {
+                customerData = await customerCreate.json();
+            }
+            catch (err) {
+                console.error("❌ Erro ao interpretar resposta da criação de cliente:", err);
+            }
+            if (!customerCreate.ok || !customerData?.id) {
+                res.status(400).json({
+                    status: "erro",
+                    erro: customerData || "Erro desconhecido ao criar cliente",
+                });
                 return;
             }
             customerId = customerData.id;
             console.log("🆕 Cliente criado:", customerId);
+        }
+        if (!customerId) {
+            res.status(400).json({ status: "erro", erro: "ID do cliente inválido." });
+            return;
         }
         // 💰 Criar pagamento com o customer correto
         const paymentResponse = await fetch("https://api.asaas.com/v3/payments", {
@@ -122,10 +134,24 @@ async function criarCobrancaHandler(req, res) {
                 externalReference: reservaId,
             }),
         });
-        const cobrancaData = await paymentResponse.json();
+        let cobrancaData = null;
+        let rawText = "";
+        try {
+            rawText = await paymentResponse.text();
+            cobrancaData = JSON.parse(rawText);
+        }
+        catch (err) {
+            console.error("❌ Erro ao interpretar resposta da cobrança:", err);
+        }
         if (!paymentResponse.ok) {
-            console.error("❌ Erro ao criar cobrança:", cobrancaData);
-            res.status(400).json({ status: "erro", erro: cobrancaData });
+            console.error("❌ Erro ao criar cobrança:", cobrancaData || paymentResponse.statusText);
+            res.status(400).json({
+                status: "erro",
+                erro: cobrancaData || {
+                    status: paymentResponse.status,
+                    message: paymentResponse.statusText,
+                },
+            });
             return;
         }
         // ✅ Resposta de sucesso

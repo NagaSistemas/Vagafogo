@@ -3,33 +3,6 @@ import { criarReserva } from "./reservas";
 import { getDocs, collection, query, where } from "firebase/firestore";
 import { db } from "./firebase";
 
-export type CriarCobrancaPayload = {
-  nome: string;
-  email: string;
-  valor: number;
-  cpf: string;
-  telefone: string;
-  atividade: string;
-  data: string;
-  horario: string;
-  participantes: number;
-  adultos: number;
-  bariatrica: number;
-  criancas: number;
-  naoPagante: number;
-  billingType: "PIX" | "CREDIT_CARD";
-};
-
-export type CriarCobrancaResponse = {
-  status: string;
-  cobranca?: {
-    id: string;
-    status: string;
-    invoiceUrl?: string;
-  };
-  error?: any;
-};
-
 export async function criarCobrancaHandler(req: Request, res: Response): Promise<void> {
   const {
     nome,
@@ -46,7 +19,7 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
     criancas,
     naoPagante,
     billingType,
-  } = req.body as CriarCobrancaPayload;
+  } = req.body;
 
   console.log("📥 Dados recebidos:", req.body);
 
@@ -143,7 +116,7 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
       customerId = customerSearchData.data[0].id;
       console.log("🔁 Cliente encontrado:", customerId);
     } else {
-      // 👤 Criar novo cliente
+      // 👤 Criar novo cliente com notificações desativadas
       const customerCreate = await fetch("https://api.asaas.com/v3/customers", {
         method: "POST",
         headers: {
@@ -156,20 +129,31 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
           cpfCnpj: cpf,
           phone: telefone,
           notificationDisabled: true,
-
         }),
       });
 
-      const customerData = await customerCreate.json();
+      let customerData: any = null;
+      try {
+        customerData = await customerCreate.json();
+      } catch (err) {
+        console.error("❌ Erro ao interpretar resposta da criação de cliente:", err);
+      }
 
-      if (!customerCreate.ok) {
-        console.error("❌ Erro ao criar cliente no Asaas:", customerData);
-        res.status(400).json({ status: "erro", erro: customerData });
+      if (!customerCreate.ok || !customerData?.id) {
+        res.status(400).json({
+          status: "erro",
+          erro: customerData || "Erro desconhecido ao criar cliente",
+        });
         return;
       }
 
       customerId = customerData.id;
       console.log("🆕 Cliente criado:", customerId);
+    }
+
+    if (!customerId) {
+      res.status(400).json({ status: "erro", erro: "ID do cliente inválido." });
+      return;
     }
 
     // 💰 Criar pagamento com o customer correto
@@ -190,11 +174,25 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
       }),
     });
 
-    const cobrancaData = await paymentResponse.json();
+    let cobrancaData: any = null;
+    let rawText = "";
+
+    try {
+      rawText = await paymentResponse.text();
+      cobrancaData = JSON.parse(rawText);
+    } catch (err) {
+      console.error("❌ Erro ao interpretar resposta da cobrança:", err);
+    }
 
     if (!paymentResponse.ok) {
-      console.error("❌ Erro ao criar cobrança:", cobrancaData);
-      res.status(400).json({ status: "erro", erro: cobrancaData });
+      console.error("❌ Erro ao criar cobrança:", cobrancaData || paymentResponse.statusText);
+      res.status(400).json({
+        status: "erro",
+        erro: cobrancaData || {
+          status: paymentResponse.status,
+          message: paymentResponse.statusText,
+        },
+      });
       return;
     }
 
