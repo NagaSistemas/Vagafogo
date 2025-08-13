@@ -126,7 +126,7 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
 
     // 🔍 Verificar se o cliente já existe no Asaas (pelo CPF)
     const customerSearch = await fetch(
-      `https://api-sandbox.asaas.com/v3/customers?cpfCnpj=${cpf}`,
+      `https://api.asaas.com/v3/customers?cpfCnpj=${cpf}`,
       {
         method: "GET",
         headers: {
@@ -144,7 +144,7 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
       console.log("🔁 Cliente encontrado:", customerId);
     } else {
       // 👤 Criar novo cliente
-      const customerCreate = await fetch("https://api-sandbox.asaas.com/v3/customers", {
+      const customerCreate = await fetch("https://api.asaas.com/v3/customers", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -155,6 +155,8 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
           email,
           cpfCnpj: cpf,
           phone: telefone,
+          notificationDisabled: true, // 👈 DESATIVA TUDO
+
         }),
       });
 
@@ -171,7 +173,7 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
     }
 
     // 💰 Criar pagamento com o customer correto
-    const paymentResponse = await fetch("https://api-sandbox.asaas.com/v3/payments", {
+    const paymentResponse = await fetch("https://api.asaas.com/v3/payments", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
