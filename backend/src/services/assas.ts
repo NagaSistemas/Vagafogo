@@ -205,11 +205,11 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
         invoiceUrl: cobrancaData.invoiceUrl,
       },
     });
-  } catch (error) {
-    console.error("🔥 Erro inesperado ao criar cobrança:", error);
-    res.status(500).json({
-      status: "erro",
-      error: "Erro interno ao processar a cobrança.",
-    });
-  }
+  } catch (error: any) {
+  console.error("🔥 Erro inesperado ao criar cobrança:", error?.response?.data || error?.message || error);
+  res.status(500).json({
+    status: "erro",
+    error: error?.response?.data || error?.message || "Erro interno ao processar a cobrança.",
+  });
+}
 }

@@ -138,10 +138,10 @@ async function criarCobrancaHandler(req, res) {
         });
     }
     catch (error) {
-        console.error("🔥 Erro inesperado ao criar cobrança:", error);
+        console.error("🔥 Erro inesperado ao criar cobrança:", error?.response?.data || error?.message || error);
         res.status(500).json({
             status: "erro",
-            error: "Erro interno ao processar a cobrança.",
+            error: error?.response?.data || error?.message || "Erro interno ao processar a cobrança.",
         });
     }
 }
