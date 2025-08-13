@@ -155,7 +155,7 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
           email,
           cpfCnpj: cpf,
           phone: telefone,
-          notificationDisabled: true, // 👈 DESATIVA TUDO
+          notificationDisabled: true,
 
         }),
       });

@@ -219,7 +219,7 @@ export function BookingSection() {
         horario: horariosDisponiveis.length > 0 ? horario : "Trilha",
       };
 
-      const rawResponse = await fetch("https://backend-production-ce20.up.railway.app/criar-cobranca", {
+      const rawResponse = await fetch("https://vagafogo-production.up.railway.app/criar-cobranca", {
         method: "POST",
         headers: {
           accept: 'application/json',
@@ -260,7 +260,7 @@ export function BookingSection() {
     const dayStr = day.toISOString().slice(0,10);
     return blockedDates.includes(dayStr);
   }
-
+''
   return (
     <section id="reservas" className="py-16 bg-[#F7FAEF]">
       <div className="container mx-auto px-4">
