@@ -93,7 +93,6 @@ async function criarCobrancaHandler(req, res) {
                     email,
                     cpfCnpj: cpf,
                     phone: telefone,
-                    notificationDisabled: true, // 👈 DESATIVA TUDO
                 }),
             });
             const customerData = await customerCreate.json();
