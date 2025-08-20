@@ -9,7 +9,7 @@ const firebaseConfig = {
     apiKey: "AIzaSyBBm3tDxQvD8SmB5AIerpe-QL-IXk1N1O4",
     authDomain: "banco-vagafogo.firebaseapp.com",
     projectId: "banco-vagafogo",
-    storageBucket: "banco-vagafogo.appspot.com", // Corrigido o .com
+    storageBucket: "banco-vagafogo.firebasestorage.app",
     messagingSenderId: "1037581590966",
     appId: "1:1037581590966:web:35195eccc16e8f3c742117"
 };
