@@ -54,21 +54,25 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
 
   const horarioFormatado = horario?.toString().trim();
 
-  if (
-    !nome ||
-    !email ||
-    !valor ||
-    !cpf ||
-    !telefone ||
-    !atividade ||
-    !data ||
-    !horarioFormatado ||
-    !participantes ||
-    !billingType
-  ) {
+  // Debug detalhado dos campos
+  const camposFaltando = [];
+  if (!nome) camposFaltando.push('nome');
+  if (!email) camposFaltando.push('email');
+  if (!valor) camposFaltando.push('valor');
+  if (!cpf) camposFaltando.push('cpf');
+  if (!telefone) camposFaltando.push('telefone');
+  if (!atividade) camposFaltando.push('atividade');
+  if (!data) camposFaltando.push('data');
+  if (!horarioFormatado) camposFaltando.push('horario');
+  if (!participantes) camposFaltando.push('participantes');
+  if (!billingType) camposFaltando.push('billingType');
+
+  if (camposFaltando.length > 0) {
+    console.log("❌ Campos faltando:", camposFaltando);
     res.status(400).json({
       status: "erro",
-      error: "Dados incompletos. Todos os campos são obrigatórios.",
+      error: `Dados incompletos. Campos faltando: ${camposFaltando.join(', ')}`,
+      camposFaltando
     });
     return;
   }
