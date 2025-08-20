@@ -18,6 +18,7 @@ export type CriarReservaPayload = {
   horario: string | null; // Novo campo para horário
   status?: string;
   observacao?: string;
+  temPet?: boolean;
 };
 
 export async function criarReserva(payload: CriarReservaPayload): Promise<string> {
@@ -36,7 +37,8 @@ export async function criarReserva(payload: CriarReservaPayload): Promise<string
     naoPagante,
     horario, // Captura o horário do payload
     status = "aguardando",
-    observacao = ""
+    observacao = "",
+    temPet
   } = payload;
 
   // 🔹 Gera um ID único (reservaId)
@@ -60,6 +62,7 @@ export async function criarReserva(payload: CriarReservaPayload): Promise<string
     horario, // Adiciona o horário ao documento
     status,
     observacao,
+    temPet,
     criadoEm: Timestamp.now(),
   });
 

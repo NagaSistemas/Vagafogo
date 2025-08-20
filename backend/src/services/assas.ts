@@ -18,6 +18,7 @@ export type CriarCobrancaPayload = {
   criancas: number;
   naoPagante: number;
   billingType: "PIX" | "CREDIT_CARD";
+  temPet?: boolean;
 };
 
 export type CriarCobrancaResponse = {
@@ -46,6 +47,7 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
     criancas,
     naoPagante,
     billingType,
+    temPet,
   } = req.body as CriarCobrancaPayload;
 
   console.log("📥 Dados recebidos:", req.body);
@@ -120,6 +122,7 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
       observacao: "",
       horario: horarioFormatado,
       status: "aguardando",
+      temPet,
     });
 
     const dataHoje = new Date().toISOString().split("T")[0];
