@@ -115,6 +115,7 @@ type WhatsappStatusPayload = {
   qr?: string | null;
   lastError?: string | null;
   lastQrAt?: string | null;
+  authStrategy?: "remote" | "local";
   info?: {
     wid?: string;
     pushname?: string;
@@ -166,7 +167,7 @@ const WHATSAPP_AUTH_SESSION_PATH = path.resolve(
 );
 const REMOTE_BACKUP_INTERVAL_MS = parseNumber(
   process.env.WHATSAPP_REMOTE_BACKUP_MS,
-  300000 // 5 min
+  60000 // 1 min
 );
 
 let firebaseStore: FirebaseStore | null = null;
@@ -185,6 +186,7 @@ let qrDataUrl: string | null = null;
 let lastError: string | null = null;
 let lastQrAt: number | null = null;
 let lastInfo: WhatsappStatusPayload["info"] | null = null;
+let lastAuthStrategy: WhatsappStatusPayload["authStrategy"] = undefined;
 let initializing = false;
 let initRetries = 0;
 let retryTimer: NodeJS.Timeout | null = null;
@@ -381,6 +383,7 @@ export function iniciarWhatsApp(): void {
   lastError = null;
 
   const store = obterFirebaseStore();
+  lastAuthStrategy = store ? "remote" : "local";
   const authStrategy = store
     ? new RemoteAuth({
         clientId: WHATSAPP_CLIENT_ID,
@@ -519,6 +522,7 @@ export function obterStatusWhatsApp(): WhatsappStatusPayload {
     qr: qrDataUrl,
     lastError,
     lastQrAt: lastQrAt ? new Date(lastQrAt).toISOString() : null,
+    authStrategy: lastAuthStrategy,
     info: lastInfo ?? undefined,
   };
 }

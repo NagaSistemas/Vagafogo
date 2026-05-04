@@ -10,6 +10,7 @@ import {
 } from "../services/reservaRetention";
 import {
   enviarEmailManual,
+  listarFilaEmailsConfirmacao,
   processarEmailsConfirmacaoPendentes,
 } from "../services/emailReservas";
 import {
@@ -80,6 +81,19 @@ app.post('/process-emails', async (_req, res) => {
     res.json({ success: true, ...resultado });
   } catch (error: any) {
     console.error('Erro ao processar emails:', error);
+    res.status(500).json({ error: error?.message || 'Erro desconhecido' });
+  }
+});
+
+app.get('/emails/fila', async (req, res) => {
+  try {
+    const limit = Number(req.query.limit ?? 200);
+    const resultado = await listarFilaEmailsConfirmacao(
+      Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 500) : 200,
+    );
+    res.json({ success: true, ...resultado });
+  } catch (error: any) {
+    console.error('Erro ao carregar fila de emails:', error);
     res.status(500).json({ error: error?.message || 'Erro desconhecido' });
   }
 });
@@ -201,10 +215,18 @@ app.post('/test-webhook', (req, res) => {
 });
 
 const port = process.env.PORT || 3001;
+const WHATSAPP_AUTO_START = (process.env.WHATSAPP_AUTO_START ?? "true").toLowerCase() !== "false";
 
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);
   iniciarLimpezaAutomaticaReservas();
+
+  if (WHATSAPP_AUTO_START) {
+    console.log("[whatsapp] Inicializacao automatica habilitada.");
+    iniciarWhatsApp();
+  } else {
+    console.log("[whatsapp] Inicializacao automatica desabilitada por WHATSAPP_AUTO_START=false.");
+  }
 
   const asaasKey = (process.env.ASAAS_API_KEY ?? "").trim();
   const splitWalletId = (process.env.ASAAS_SPLIT_WALLET_ID ?? "").trim();

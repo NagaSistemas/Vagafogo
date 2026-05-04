@@ -348,6 +348,7 @@ type WhatsappStatusPayload = {
   qr?: string | null;
   lastError?: string | null;
   lastQrAt?: string | null;
+  authStrategy?: 'remote' | 'local';
   info?: {
     wid?: string;
     pushname?: string;
@@ -452,6 +453,32 @@ type WhatsappEnvioModal = {
   dadosMensagem: Record<string, string>;
   participantes: number;
   pacoteDescricao: string;
+};
+
+type EmailFilaItem = {
+  id: string;
+  statusEmail: 'enviado' | 'pendente' | 'erro' | 'sem_email';
+  nome: string;
+  email: string;
+  telefone?: string;
+  atividade?: string;
+  data?: string;
+  horario?: string;
+  valor?: number;
+  emailErro?: string;
+  dataEmailErro?: string;
+  dataEmailEnviado?: string;
+  criadoEm?: string;
+};
+
+type EmailFilaResumo = {
+  emailHabilitado: boolean;
+  totalReservasPagas: number;
+  enviados: number;
+  pendentes: number;
+  erros: number;
+  semEmail: number;
+  itens: EmailFilaItem[];
 };
 
 type ParticipantStepperCardProps = {
@@ -1690,6 +1717,20 @@ export default function AdminDashboard() {
   const [whatsappSalvando, setWhatsappSalvando] = useState(false);
 
   const [emailUltimoProcessamento, setEmailUltimoProcessamento] = useState<string | null>(null);
+
+  const [emailFila, setEmailFila] = useState<EmailFilaResumo>({
+    emailHabilitado: false,
+    totalReservasPagas: 0,
+    enviados: 0,
+    pendentes: 0,
+    erros: 0,
+    semEmail: 0,
+    itens: [],
+  });
+
+  const [emailFilaCarregando, setEmailFilaCarregando] = useState(false);
+
+  const [emailRegistroFiltro, setEmailRegistroFiltro] = useState<'todos' | 'erro' | 'pendente' | 'enviado' | 'sem_email'>('todos');
 
   // Dashboard
   const [dashboardInicio, setDashboardInicio] = useState(() => dayjs().subtract(30, 'day').format('YYYY-MM-DD'));
@@ -3117,11 +3158,19 @@ const totalParticipantesDoDia = useMemo(() => {
       default:
         return {
           label: 'Nao iniciado',
-          hint: 'Clique para conectar',
+          hint: 'Aguardando inicializacao do servidor ou clique para conectar',
           tone: 'slate' as const,
         };
     }
   }, [whatsappStatus]);
+
+  const emailRegistroItensFiltrados = useMemo(() => {
+    if (emailRegistroFiltro === 'todos') {
+      return emailFila.itens;
+    }
+
+    return emailFila.itens.filter((item) => item.statusEmail === emailRegistroFiltro);
+  }, [emailFila.itens, emailRegistroFiltro]);
 
   // Pesquisa Clientes
 
@@ -4842,6 +4891,32 @@ const totalParticipantesDoDia = useMemo(() => {
     }
   };
 
+  const carregarFilaEmails = useCallback(async () => {
+    try {
+      setEmailFilaCarregando(true);
+      const response = await fetch(`${API_BASE}/emails/fila?limit=500`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || `Status ${response.status}`);
+      }
+
+      setEmailFila({
+        emailHabilitado: data?.emailHabilitado === true,
+        totalReservasPagas: Number(data?.totalReservasPagas ?? 0),
+        enviados: Number(data?.enviados ?? 0),
+        pendentes: Number(data?.pendentes ?? 0),
+        erros: Number(data?.erros ?? 0),
+        semEmail: Number(data?.semEmail ?? 0),
+        itens: Array.isArray(data?.itens) ? data.itens : [],
+      });
+    } catch (error: any) {
+      console.error('Erro ao carregar fila de emails:', error);
+      setFeedback({ type: 'error', message: error?.message || 'Erro ao carregar fila de emails.' });
+    } finally {
+      setEmailFilaCarregando(false);
+    }
+  }, []);
+
   const processarEmailsPendentes = async () => {
     try {
       setWhatsappCarregando(true);
@@ -4860,6 +4935,7 @@ const totalParticipantesDoDia = useMemo(() => {
             data?.erroGeral ||
             'Processamento interrompido: a conexão SMTP não respondeu. Verifique as variáveis e o plano da Railway.',
         });
+        void carregarFilaEmails();
         return;
       }
 
@@ -4867,6 +4943,7 @@ const totalParticipantesDoDia = useMemo(() => {
         type: 'success',
         message: `Processamento concluído: ${enviados} email(s) enviado(s).`,
       });
+      void carregarFilaEmails();
     } catch (error: any) {
       console.error('Erro ao processar emails pendentes:', error);
       setFeedback({ type: 'error', message: error?.message || 'Erro ao processar emails.' });
@@ -4888,6 +4965,7 @@ const totalParticipantesDoDia = useMemo(() => {
         qr: data?.qr ?? null,
         lastError: data?.lastError ?? null,
         lastQrAt: data?.lastQrAt ?? null,
+        authStrategy: data?.authStrategy === 'remote' ? 'remote' : data?.authStrategy === 'local' ? 'local' : undefined,
         info: data?.info,
       });
     } catch (error: any) {
@@ -5292,6 +5370,12 @@ const totalParticipantesDoDia = useMemo(() => {
 
     return () => window.clearInterval(intervalId);
   }, [aba, carregarStatusWhatsapp]);
+
+  useEffect(() => {
+    if (aba !== 'email') return;
+
+    void carregarFilaEmails();
+  }, [aba, carregarFilaEmails]);
 
   const iniciarNovoTipoCliente = () => {
 
@@ -13081,6 +13165,12 @@ const totalParticipantesDoDia = useMemo(() => {
                 disabled: whatsappCarregando,
               },
               {
+                label: 'Atualizar fila',
+                icon: FaSyncAlt,
+                onClick: carregarFilaEmails,
+                disabled: emailFilaCarregando,
+              },
+              {
                 label: 'Salvar configuracao',
                 icon: FaCheck,
                 onClick: salvarEmailConfig,
@@ -13101,6 +13191,20 @@ const totalParticipantesDoDia = useMemo(() => {
                 hint: 'Texto enviado apos a confirmacao do pagamento',
                 icon: FaClipboardList,
                 tone: whatsappConfig.mensagemConfirmacaoAutomatica.trim() ? 'sky' : 'amber',
+              },
+              {
+                label: 'Na fila',
+                value: emailFila.pendentes.toLocaleString('pt-BR'),
+                hint: 'Reservas pagas aguardando envio',
+                icon: FaPaperPlane,
+                tone: emailFila.pendentes > 0 ? 'amber' : 'emerald',
+              },
+              {
+                label: 'Com erro',
+                value: emailFila.erros.toLocaleString('pt-BR'),
+                hint: 'Falharam no envio anterior',
+                icon: FaQuestionCircle,
+                tone: emailFila.erros > 0 ? 'amber' : 'emerald',
               },
               {
                 label: 'Assunto',
@@ -13148,15 +13252,42 @@ const totalParticipantesDoDia = useMemo(() => {
                   </p>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={processarEmailsPendentes}
-                  disabled={whatsappCarregando}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                >
-                  <FaPaperPlane className="h-4 w-4" />
-                  {whatsappCarregando ? 'Processando...' : 'Processar emails pendentes'}
-                </button>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase text-amber-700">Pendentes</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900">{emailFila.pendentes}</p>
+                  </div>
+                  <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase text-rose-700">Com erro</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900">{emailFila.erros}</p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                    <p className="text-xs font-semibold uppercase text-slate-500">Sem email</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900">{emailFila.semEmail}</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={processarEmailsPendentes}
+                    disabled={whatsappCarregando}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  >
+                    <FaPaperPlane className="h-4 w-4" />
+                    {whatsappCarregando ? 'Processando...' : 'Processar emails pendentes'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={carregarFilaEmails}
+                    disabled={emailFilaCarregando}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <FaSyncAlt className="h-4 w-4" />
+                    {emailFilaCarregando ? 'Atualizando...' : 'Atualizar fila'}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -13236,6 +13367,129 @@ const totalParticipantesDoDia = useMemo(() => {
             </div>
           </div>
 
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Registro de emails</h3>
+                <p className="text-sm text-slate-500">
+                  Histórico de emails enviados, pendentes, sem endereço e com falha no envio.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'todos', label: `Todos (${emailFila.itens.length})` },
+                  { id: 'erro', label: `Erros (${emailFila.erros})` },
+                  { id: 'pendente', label: `Pendentes (${emailFila.pendentes})` },
+                  { id: 'enviado', label: `Enviados (${emailFila.enviados})` },
+                  { id: 'sem_email', label: `Sem email (${emailFila.semEmail})` },
+                ].map((filtro) => (
+                  <button
+                    key={filtro.id}
+                    type="button"
+                    onClick={() => setEmailRegistroFiltro(filtro.id as typeof emailRegistroFiltro)}
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                      emailRegistroFiltro === filtro.id
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700'
+                        : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300'
+                    }`}
+                  >
+                    {filtro.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {emailFilaCarregando ? (
+              <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
+                Carregando registro de emails...
+              </div>
+            ) : emailRegistroItensFiltrados.length === 0 ? (
+              <div className="mt-4 rounded-xl border border-dashed border-emerald-200 bg-emerald-50 px-4 py-8 text-center text-sm text-emerald-700">
+                Nenhum registro encontrado para este filtro.
+              </div>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {emailRegistroItensFiltrados.map((item) => {
+                  const statusLabel =
+                    item.statusEmail === 'enviado'
+                      ? 'Enviado'
+                      : item.statusEmail === 'erro'
+                      ? 'Erro'
+                      : item.statusEmail === 'sem_email'
+                        ? 'Sem email'
+                        : 'Pendente';
+                  const statusClassName =
+                    item.statusEmail === 'enviado'
+                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                      : item.statusEmail === 'erro'
+                      ? 'border-rose-200 bg-rose-50 text-rose-700'
+                      : item.statusEmail === 'sem_email'
+                        ? 'border-slate-200 bg-slate-50 text-slate-600'
+                        : 'border-amber-200 bg-amber-50 text-amber-700';
+                  const dataEvento =
+                    item.statusEmail === 'enviado'
+                      ? item.dataEmailEnviado
+                      : item.statusEmail === 'erro'
+                        ? item.dataEmailErro
+                        : item.criadoEm || item.data;
+                  const labelEvento =
+                    item.statusEmail === 'enviado'
+                      ? 'Enviado em'
+                      : item.statusEmail === 'erro'
+                        ? 'Erro em'
+                        : 'Criado em';
+
+                  return (
+                    <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-base font-semibold text-slate-900">{item.nome || 'Cliente'}</h4>
+                            <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClassName}`}>
+                              {statusLabel}
+                            </span>
+                          </div>
+
+                          <p className="mt-1 text-sm text-slate-600">
+                            {item.email || 'Email não informado'}
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500">
+                            {formatarDataReserva(item.data)} {item.horario || '---'} · {item.atividade || 'Atividade'}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-500">
+                            {dataEvento ? (
+                              <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1">
+                                {labelEvento}: {dayjs(dataEvento).format('DD/MM/YYYY HH:mm')}
+                              </span>
+                            ) : null}
+                            {item.dataEmailEnviado ? (
+                              <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                                Confirmado: {dayjs(item.dataEmailEnviado).format('DD/MM/YYYY HH:mm')}
+                              </span>
+                            ) : null}
+                          </div>
+
+                          {item.emailErro ? (
+                            <p className="mt-2 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                              {item.emailErro}
+                            </p>
+                          ) : null}
+                        </div>
+
+                        <div className="shrink-0 text-left text-sm text-slate-500 lg:text-right">
+                          <p className="font-semibold text-slate-900">{formatCurrency(Number(item.valor ?? 0))}</p>
+                          <p className="mt-1">{statusLabel}</p>
+                          <p className="mt-1 text-xs text-slate-400">Reserva {item.id}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
         </section>
 
       )}
@@ -13285,6 +13539,23 @@ const totalParticipantesDoDia = useMemo(() => {
                 hint: 'Nome exibido ao vincular pelo QR Code',
                 icon: FaQrcode,
                 tone: 'indigo',
+              },
+              {
+                label: 'Sessao',
+                value:
+                  whatsappStatus.authStrategy === 'remote'
+                    ? 'Persistente'
+                    : whatsappStatus.authStrategy === 'local'
+                      ? 'Local'
+                      : 'Aguardando',
+                hint:
+                  whatsappStatus.authStrategy === 'remote'
+                    ? 'Salva no Firebase Storage'
+                    : whatsappStatus.authStrategy === 'local'
+                      ? 'Pode perder no deploy'
+                      : 'Inicia junto com o servidor',
+                icon: FaSyncAlt,
+                tone: whatsappStatus.authStrategy === 'remote' ? 'emerald' : 'amber',
               },
               {
                 label: 'Mensagem',
