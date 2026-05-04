@@ -1381,6 +1381,8 @@ export default function AdminDashboard() {
 
   const [whatsappEnvioMensagem, setWhatsappEnvioMensagem] = useState('');
 
+  const [whatsappModeloAbertoId, setWhatsappModeloAbertoId] = useState<string | null>(null);
+
   const [whatsappStatus, setWhatsappStatus] = useState<WhatsappStatusPayload>({
     status: 'idle',
     qr: null,
@@ -3013,6 +3015,73 @@ const totalParticipantesDoDia = useMemo(() => {
     return montarMensagemWhatsApp(template, dadosExemploWhatsapp);
   }, [dadosExemploWhatsapp, whatsappConfig.mensagemBoasVindas]);
 
+  const modelosPreviewWhatsappManual = useMemo(() => {
+    const modelosCustomizados = (whatsappConfig.modelosMensagemManual ?? []).map((modelo) => {
+      const mensagem = modelo.mensagem?.trim() || '';
+
+      return {
+        id: modelo.id,
+        titulo: modelo.titulo?.trim() || 'Sem título',
+        tipo: 'Personalizado',
+        pronto: Boolean(modelo.titulo?.trim() && mensagem),
+        preview: mensagem ? montarMensagemWhatsApp(mensagem, dadosExemploWhatsapp) : 'Complete o título e a mensagem para salvar este modelo.',
+      };
+    });
+
+    return [
+      {
+        id: 'padrao',
+        titulo: 'Padrão',
+        tipo: 'Mensagem inicial',
+        pronto: Boolean(whatsappConfig.mensagemConfirmacaoManual.trim()),
+        preview: mensagemPreviewWhatsappManual || '-',
+      },
+      ...modelosCustomizados,
+    ];
+  }, [
+    dadosExemploWhatsapp,
+    mensagemPreviewWhatsappManual,
+    whatsappConfig.mensagemConfirmacaoManual,
+    whatsappConfig.modelosMensagemManual,
+  ]);
+
+  const whatsappModeloAberto = useMemo(() => {
+    if (!whatsappModeloAbertoId) return null;
+
+    if (whatsappModeloAbertoId === 'padrao') {
+      return {
+        id: 'padrao',
+        titulo: 'Padrão',
+        tipo: 'Mensagem inicial',
+        mensagem: whatsappConfig.mensagemConfirmacaoManual,
+        preview: mensagemPreviewWhatsappManual || '-',
+        pronto: Boolean(whatsappConfig.mensagemConfirmacaoManual.trim()),
+        padrao: true,
+      };
+    }
+
+    const modelo = (whatsappConfig.modelosMensagemManual ?? []).find((item) => item.id === whatsappModeloAbertoId);
+    if (!modelo) return null;
+
+    const mensagem = modelo.mensagem?.trim() || '';
+
+    return {
+      id: modelo.id,
+      titulo: modelo.titulo?.trim() || 'Sem título',
+      tipo: 'Personalizado',
+      mensagem: modelo.mensagem ?? '',
+      preview: mensagem ? montarMensagemWhatsApp(mensagem, dadosExemploWhatsapp) : 'Complete a mensagem para ver o preview.',
+      pronto: Boolean(modelo.titulo?.trim() && mensagem),
+      padrao: false,
+    };
+  }, [
+    dadosExemploWhatsapp,
+    mensagemPreviewWhatsappManual,
+    whatsappConfig.mensagemConfirmacaoManual,
+    whatsappConfig.modelosMensagemManual,
+    whatsappModeloAbertoId,
+  ]);
+
   const whatsappStatusInfo = useMemo(() => {
     switch (whatsappStatus.status) {
       case 'ready':
@@ -4635,11 +4704,24 @@ const totalParticipantesDoDia = useMemo(() => {
 
   }, []);
 
-  const salvarWhatsappConfig = async () => {
+  const obterModelosWhatsappNormalizados = () => {
+    const modelosComAlgumValor = (whatsappConfig.modelosMensagemManual ?? []).filter((item) => {
+      const titulo = item.titulo?.trim() ?? '';
+      const mensagem = item.mensagem?.trim() ?? '';
+      return titulo || mensagem;
+    });
+
+    const modelos = normalizarModelosMensagemManual(modelosComAlgumValor);
+
+    return {
+      modelos,
+      modelosIgnorados: modelosComAlgumValor.length - modelos.length,
+    };
+  };
+
+  const salvarEmailConfig = async () => {
 
     const mensagemAutomatica = whatsappConfig.mensagemConfirmacaoAutomatica.trim();
-    const mensagemManual = whatsappConfig.mensagemConfirmacaoManual.trim();
-    const mensagemBoasVindas = (whatsappConfig.mensagemBoasVindas ?? '').trim();
     const assuntoEmail = (whatsappConfig.assuntoConfirmacaoEmail ?? '').trim();
 
     if (!mensagemAutomatica) {
@@ -4651,25 +4733,6 @@ const totalParticipantesDoDia = useMemo(() => {
       setFeedback({ type: 'error', message: 'Informe o assunto do email.' });
       return;
     }
-
-    if (!mensagemManual) {
-      setFeedback({ type: 'error', message: 'Informe o modelo de email manual.' });
-      return;
-    }
-
-    if (!mensagemBoasVindas) {
-      setFeedback({ type: 'error', message: 'Informe a mensagem de boas-vindas.' });
-      return;
-    }
-
-    const modelosComAlgumValor = (whatsappConfig.modelosMensagemManual ?? []).filter((item) => {
-      const titulo = item.titulo?.trim() ?? '';
-      const mensagem = item.mensagem?.trim() ?? '';
-      return titulo || mensagem;
-    });
-
-    const modelos = normalizarModelosMensagemManual(modelosComAlgumValor);
-    const modelosIgnorados = modelosComAlgumValor.length - modelos.length;
 
     setWhatsappSalvando(true);
 
@@ -4684,38 +4747,23 @@ const totalParticipantesDoDia = useMemo(() => {
         mensagemConfirmacaoAutomatica: mensagemAutomatica,
         mensagemConfirmacaoEmail: mensagemAutomatica,
         assuntoConfirmacaoEmail: assuntoEmail,
-        mensagemConfirmacaoManual: mensagemManual,
-        mensagemManualPadrao: mensagemManual,
-        modelosMensagemManual: modelos,
-        atualizadoEm: new Date(),
-      };
-
-      const whatsappPayload = {
-        mensagemBoasVindas,
         atualizadoEm: new Date(),
       };
 
       await Promise.all([
         setDoc(doc(db, 'configuracoes', 'email'), emailPayload, { merge: true }),
         setDoc(doc(db, 'configuracoes', 'mensagens'), mensagensPayload, { merge: true }),
-        setDoc(doc(db, 'configuracoes', 'whatsapp'), whatsappPayload, { merge: true }),
       ]);
 
       setWhatsappConfig((prev) => ({
         ...prev,
         assuntoConfirmacaoEmail: assuntoEmail,
         mensagemConfirmacaoAutomatica: mensagemAutomatica,
-        mensagemConfirmacaoManual: mensagemManual,
-        mensagemBoasVindas,
-        modelosMensagemManual: modelos,
       }));
 
       setFeedback({
         type: 'success',
-        message:
-          modelosIgnorados > 0
-            ? 'Configurações salvas. Modelos incompletos foram ignorados.'
-            : 'Configurações salvas.',
+        message: 'Configurações de email salvas.',
       });
 
     } catch (error) {
@@ -4732,35 +4780,63 @@ const totalParticipantesDoDia = useMemo(() => {
 
   };
 
-  const salvarDisparadorWhatsapp = async () => {
+  const salvarMensagensWhatsapp = async () => {
+    const mensagemManual = whatsappConfig.mensagemConfirmacaoManual.trim();
     const mensagemBoasVindas = (whatsappConfig.mensagemBoasVindas ?? '').trim();
+
+    if (!mensagemManual) {
+      setFeedback({ type: 'error', message: 'Informe a mensagem padrão do WhatsApp.' });
+      return;
+    }
 
     if (!mensagemBoasVindas) {
       setFeedback({ type: 'error', message: 'Informe a mensagem do Disparador Agradecimento.' });
       return;
     }
 
+    const { modelos, modelosIgnorados } = obterModelosWhatsappNormalizados();
+
     setWhatsappSalvando(true);
 
     try {
-      await setDoc(
-        doc(db, 'configuracoes', 'whatsapp'),
-        {
-          mensagemBoasVindas,
-          atualizadoEm: new Date(),
-        },
-        { merge: true }
-      );
+      await Promise.all([
+        setDoc(
+          doc(db, 'configuracoes', 'mensagens'),
+          {
+            mensagemConfirmacaoManual: mensagemManual,
+            mensagemManualPadrao: mensagemManual,
+            modelosMensagemManual: modelos,
+            atualizadoEm: new Date(),
+          },
+          { merge: true }
+        ),
+        setDoc(
+          doc(db, 'configuracoes', 'whatsapp'),
+          {
+            mensagemBoasVindas,
+            atualizadoEm: new Date(),
+          },
+          { merge: true }
+        ),
+      ]);
 
       setWhatsappConfig((prev) => ({
         ...prev,
+        mensagemConfirmacaoManual: mensagemManual,
         mensagemBoasVindas,
+        modelosMensagemManual: modelos,
       }));
 
-      setFeedback({ type: 'success', message: 'Disparador Agradecimento salvo.' });
+      setFeedback({
+        type: 'success',
+        message:
+          modelosIgnorados > 0
+            ? 'Mensagens do WhatsApp salvas. Modelos incompletos foram ignorados.'
+            : 'Mensagens do WhatsApp salvas.',
+      });
     } catch (error) {
-      console.error('Erro ao salvar disparador WhatsApp:', error);
-      setFeedback({ type: 'error', message: 'Erro ao salvar disparador.' });
+      console.error('Erro ao salvar mensagens do WhatsApp:', error);
+      setFeedback({ type: 'error', message: 'Erro ao salvar mensagens do WhatsApp.' });
     } finally {
       setWhatsappSalvando(false);
     }
@@ -4777,6 +4853,16 @@ const totalParticipantesDoDia = useMemo(() => {
       const enviados = Number(data?.emailsEnviados ?? 0);
       const falhas = Number(data?.falhas ?? 0);
       setEmailUltimoProcessamento(`${enviados} enviado(s), ${falhas} falha(s)`);
+      if (data?.interrompidoPorConexao) {
+        setFeedback({
+          type: 'error',
+          message:
+            data?.erroGeral ||
+            'Processamento interrompido: a conexão SMTP não respondeu. Verifique as variáveis e o plano da Railway.',
+        });
+        return;
+      }
+
       setFeedback({
         type: 'success',
         message: `Processamento concluído: ${enviados} email(s) enviado(s).`,
@@ -4881,17 +4967,21 @@ const totalParticipantesDoDia = useMemo(() => {
     `modelo-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
   const adicionarModeloMensagemManual = () => {
+    const novoId = gerarIdModeloWhatsapp();
+
     setWhatsappConfig((prev) => ({
       ...prev,
       modelosMensagemManual: [
         ...(prev.modelosMensagemManual ?? []),
         {
-          id: gerarIdModeloWhatsapp(),
+          id: novoId,
           titulo: `Modelo ${(prev.modelosMensagemManual?.length ?? 0) + 1}`,
           mensagem: '',
         },
       ],
     }));
+
+    setWhatsappModeloAbertoId(novoId);
   };
 
   const atualizarModeloMensagemManual = (modeloId: string, patch: Partial<WhatsappModeloMensagem>) => {
@@ -6467,7 +6557,7 @@ const totalParticipantesDoDia = useMemo(() => {
                 <button
                   type="button"
                   onClick={() => {
-                    setAba('email');
+                    setAba('whatsapp');
                     fecharEnvioWhatsapp();
                   }}
                   className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
@@ -6501,6 +6591,165 @@ const totalParticipantesDoDia = useMemo(() => {
                 >
                   <FaWhatsapp className="h-4 w-4" />
                   Abrir WhatsApp
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+      {whatsappModeloAberto && (
+        <div
+          className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-slate-900/60 px-2 py-4"
+          onClick={() => setWhatsappModeloAbertoId(null)}
+        >
+          <div
+            className="w-full max-w-3xl overflow-hidden rounded-2xl bg-white shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-4 sm:px-6">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
+                  Modelo de WhatsApp
+                </p>
+                <h4 className="mt-1 text-lg font-semibold text-slate-900">{whatsappModeloAberto.titulo}</h4>
+                <p className="mt-1 text-sm text-slate-500">{whatsappModeloAberto.tipo}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setWhatsappModeloAbertoId(null)}
+                className="rounded-full border border-slate-200 p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+                aria-label="Fechar"
+              >
+                x
+              </button>
+            </div>
+
+            <div className="grid gap-5 px-4 py-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+              <div className="space-y-4">
+                {!whatsappModeloAberto.padrao ? (
+                  <label className="block text-xs font-semibold uppercase text-slate-500">
+                    Titulo
+                    <input
+                      value={
+                        (whatsappConfig.modelosMensagemManual ?? []).find((modelo) => modelo.id === whatsappModeloAberto.id)
+                          ?.titulo ?? ''
+                      }
+                      onChange={(e) => atualizarModeloMensagemManual(whatsappModeloAberto.id, { titulo: e.target.value })}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                      placeholder="Ex: Confirmar detalhes"
+                    />
+                  </label>
+                ) : null}
+
+                <label className="block text-xs font-semibold uppercase text-slate-500">
+                  Mensagem
+                  <textarea
+                    value={whatsappModeloAberto.mensagem}
+                    onChange={(e) => {
+                      if (whatsappModeloAberto.padrao) {
+                        setWhatsappConfig((prev) => ({
+                          ...prev,
+                          mensagemConfirmacaoManual: e.target.value,
+                        }));
+                        return;
+                      }
+
+                      atualizarModeloMensagemManual(whatsappModeloAberto.id, { mensagem: e.target.value });
+                    }}
+                    rows={10}
+                    className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                    placeholder={whatsappTemplateMensagemManualPadrao}
+                  />
+                </label>
+
+                <div className="flex flex-wrap gap-2">
+                  {whatsappPlaceholders.map((placeholder) => (
+                    <button
+                      key={`modelo-modal-${whatsappModeloAberto.id}-${placeholder}`}
+                      type="button"
+                      onClick={() => {
+                        if (whatsappModeloAberto.padrao) {
+                          inserirPlaceholderWhatsapp('mensagemConfirmacaoManual', placeholder);
+                          return;
+                        }
+
+                        inserirPlaceholderModeloMensagemManual(whatsappModeloAberto.id, placeholder);
+                      }}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-emerald-300 hover:text-emerald-600"
+                    >
+                      {placeholder}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase text-slate-500">Preview completo</p>
+                  <span
+                    className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                      whatsappModeloAberto.pronto
+                        ? 'border-emerald-200 bg-white text-emerald-700'
+                        : 'border-amber-200 bg-white text-amber-700'
+                    }`}
+                  >
+                    {whatsappModeloAberto.pronto ? 'Pronto' : 'Incompleto'}
+                  </span>
+                </div>
+                <div className="mt-3 rounded-2xl rounded-tl-md bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm whitespace-pre-wrap">
+                  {whatsappModeloAberto.preview}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 border-t border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+              <div>
+                {!whatsappModeloAberto.padrao ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      removerModeloMensagemManual(whatsappModeloAberto.id);
+                      setWhatsappModeloAbertoId(null);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                  >
+                    <FaTrash className="h-3.5 w-3.5" />
+                    Excluir
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setWhatsappConfig((prev) => ({
+                        ...prev,
+                        mensagemConfirmacaoManual: whatsappTemplateMensagemManualPadrao,
+                      }))
+                    }
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+                  >
+                    Restaurar padrao
+                  </button>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={() => setWhatsappModeloAbertoId(null)}
+                  className="inline-flex items-center justify-center rounded-full border border-slate-200 px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={salvarMensagensWhatsapp}
+                  disabled={whatsappSalvando}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  <FaCheck className="h-4 w-4" />
+                  {whatsappSalvando ? 'Salvando...' : 'Salvar modelos'}
                 </button>
               </div>
             </div>
@@ -12834,7 +13083,7 @@ const totalParticipantesDoDia = useMemo(() => {
               {
                 label: 'Salvar configuracao',
                 icon: FaCheck,
-                onClick: salvarWhatsappConfig,
+                onClick: salvarEmailConfig,
                 disabled: whatsappSalvando,
               },
             ]}
@@ -12987,120 +13236,6 @@ const totalParticipantesDoDia = useMemo(() => {
             </div>
           </div>
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="border-b border-slate-100 pb-4">
-                <h3 className="text-lg font-semibold text-slate-900">Modelo de email manual</h3>
-                <p className="text-sm text-slate-500">Texto usado quando a equipe envia email direto pela reserva.</p>
-              </div>
-
-              <div className="mt-4 space-y-4">
-                <label className="text-xs font-semibold uppercase text-slate-500">
-                  Texto padrao
-                  <textarea
-                    value={whatsappConfig.mensagemConfirmacaoManual}
-                    onChange={(e) =>
-                      setWhatsappConfig((prev) => ({
-                        ...prev,
-                        mensagemConfirmacaoManual: e.target.value,
-                      }))
-                    }
-                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                    rows={7}
-                    placeholder={whatsappTemplateMensagemManualPadrao}
-                  />
-                </label>
-
-                <div className="flex flex-wrap gap-2">
-                  {whatsappPlaceholders.map((placeholder) => (
-                    <button
-                      key={'email-manual-' + placeholder}
-                      type="button"
-                      onClick={() => inserirPlaceholderWhatsapp('mensagemConfirmacaoManual', placeholder)}
-                      className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-emerald-300 hover:text-emerald-600"
-                    >
-                      {placeholder}
-                    </button>
-                  ))}
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold uppercase text-slate-500">Preview do email manual</p>
-                  <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap">
-                    {mensagemPreviewWhatsappManual || '-'}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="flex flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-slate-900">Modelos de email</h3>
-                  <p className="text-sm text-slate-500">Variações salvas para escolher antes do envio manual.</p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={adicionarModeloMensagemManual}
-                  className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
-                >
-                  <FaPlus className="h-3.5 w-3.5" />
-                  Novo modelo
-                </button>
-              </div>
-
-              <div className="mt-4 space-y-3">
-                {(whatsappConfig.modelosMensagemManual ?? []).length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">
-                    Nenhum modelo criado. Use &quot;Novo modelo&quot; para adicionar.
-                  </div>
-                ) : (
-                  (whatsappConfig.modelosMensagemManual ?? []).map((modelo) => (
-                    <div key={modelo.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <label className="flex-1 text-xs font-semibold uppercase text-slate-500">
-                          Titulo
-                          <input
-                            value={modelo.titulo}
-                            onChange={(e) => atualizarModeloMensagemManual(modelo.id, { titulo: e.target.value })}
-                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                          />
-                        </label>
-
-                        <button
-                          type="button"
-                          onClick={() => removerModeloMensagemManual(modelo.id)}
-                          className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
-                        >
-                          <FaTrash className="h-3.5 w-3.5" />
-                          Excluir
-                        </button>
-                      </div>
-
-                      <label className="mt-3 block text-xs font-semibold uppercase text-slate-500">
-                        Mensagem
-                        <textarea
-                          value={modelo.mensagem}
-                          onChange={(e) => atualizarModeloMensagemManual(modelo.id, { mensagem: e.target.value })}
-                          rows={4}
-                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                          placeholder={whatsappTemplateMensagemManualPadrao}
-                        />
-                      </label>
-
-                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap">
-                        {modelo.mensagem?.trim()
-                          ? montarMensagemWhatsApp(modelo.mensagem, dadosExemploWhatsapp)
-                          : 'Preview do modelo'}
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-
         </section>
 
       )}
@@ -13130,9 +13265,9 @@ const totalParticipantesDoDia = useMemo(() => {
                 disabled: whatsappAcaoCarregando === 'logout' || whatsappStatus.status === 'idle',
               },
               {
-                label: 'Salvar disparador',
+                label: 'Salvar WhatsApp',
                 icon: FaCheck,
-                onClick: salvarDisparadorWhatsapp,
+                onClick: salvarMensagensWhatsapp,
                 disabled: whatsappSalvando,
               },
             ]}
@@ -13158,14 +13293,21 @@ const totalParticipantesDoDia = useMemo(() => {
                 icon: FaClipboardList,
                 tone: whatsappConfig.mensagemBoasVindas.trim() ? 'emerald' : 'amber',
               },
+              {
+                label: 'Modelos manuais',
+                value: `${modelosPreviewWhatsappManual.length} modelo(s)`,
+                hint: 'Aparecem antes de abrir o WhatsApp do cliente',
+                icon: FaEye,
+                tone: 'sky',
+              },
             ]}
           />
 
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)]">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <h3 className="text-lg font-semibold text-slate-900">Conexao via QR Code</h3>
+                  <h3 className="text-lg font-semibold text-slate-900">Conexao do disparador</h3>
                   <p className="text-sm text-slate-500">Vincule o WhatsApp que enviara o Disparador Agradecimento.</p>
                 </div>
 
@@ -13180,8 +13322,8 @@ const totalParticipantesDoDia = useMemo(() => {
                 </span>
               </div>
 
-              <div className="mt-4 grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
-                <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
+              <div className="mt-4 grid gap-4 lg:grid-cols-[230px_minmax(0,1fr)]">
+                <div className="flex min-h-[230px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
                   {whatsappStatus.qr ? (
                     <img
                       src={whatsappStatus.qr}
@@ -13239,8 +13381,8 @@ const totalParticipantesDoDia = useMemo(() => {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5 shadow-sm">
-              <div className="border-b border-emerald-100 pb-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="border-b border-slate-100 pb-4">
                 <h3 className="text-lg font-semibold text-slate-900">Disparador Agradecimento</h3>
                 <p className="text-sm text-slate-500">Mensagem automatica enviada no WhatsApp quando a chegada do cliente e confirmada.</p>
               </div>
@@ -13277,8 +13419,10 @@ const totalParticipantesDoDia = useMemo(() => {
 
                 <div>
                   <p className="text-xs font-semibold uppercase text-slate-500">Preview do disparador</p>
-                  <div className="mt-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap">
-                    {mensagemPreviewDisparadorAgradecimento || '-'}
+                  <div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3">
+                    <div className="max-w-[92%] rounded-2xl rounded-tl-md bg-white px-3 py-2 text-sm leading-relaxed text-slate-800 shadow-sm whitespace-pre-wrap">
+                      {mensagemPreviewDisparadorAgradecimento || '-'}
+                    </div>
                   </div>
                 </div>
 
@@ -13295,6 +13439,116 @@ const totalParticipantesDoDia = useMemo(() => {
                   Restaurar padrao
                 </button>
               </div>
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900">Modelos antes de abrir WhatsApp do cliente</h3>
+                <p className="text-sm text-slate-500">
+                  Estes textos aparecem no seletor quando a equipe clica no WhatsApp de uma reserva.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={adicionarModeloMensagemManual}
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
+                >
+                  <FaPlus className="h-3.5 w-3.5" />
+                  Novo modelo
+                </button>
+                <button
+                  type="button"
+                  onClick={salvarMensagensWhatsapp}
+                  disabled={whatsappSalvando}
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  <FaCheck className="h-3.5 w-3.5" />
+                  {whatsappSalvando ? 'Salvando...' : 'Salvar modelos'}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {modelosPreviewWhatsappManual.map((modelo) => (
+                <div
+                  key={modelo.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setWhatsappModeloAbertoId(modelo.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      setWhatsappModeloAbertoId(modelo.id);
+                    }
+                  }}
+                  className={`group flex min-h-[230px] cursor-pointer flex-col rounded-xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-emerald-200 ${
+                    modelo.pronto
+                      ? 'border-slate-200 bg-white'
+                      : 'border-amber-200 bg-amber-50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-base font-semibold text-slate-900">{modelo.titulo}</p>
+                      <p className="mt-1 text-xs font-semibold uppercase text-slate-500">{modelo.tipo}</p>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                        modelo.pronto
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                          : 'border-amber-200 bg-white text-amber-700'
+                      }`}
+                    >
+                      {modelo.pronto ? 'Pronto' : 'Incompleto'}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 max-h-[96px] flex-1 overflow-hidden rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm leading-relaxed text-slate-700 whitespace-pre-wrap">
+                    {modelo.preview}
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setWhatsappModeloAbertoId(modelo.id);
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+                    >
+                      <FaEdit className="h-3.5 w-3.5" />
+                      Editar
+                    </button>
+
+                    {modelo.id !== 'padrao' ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removerModeloMensagemManual(modelo.id);
+                        }}
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                      >
+                        <FaTrash className="h-3.5 w-3.5" />
+                        Excluir
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={adicionarModeloMensagemManual}
+                className="flex min-h-[230px] flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-slate-500 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+              >
+                <FaPlus className="h-5 w-5" />
+                <span className="mt-3 text-sm font-semibold">Novo modelo</span>
+              </button>
             </div>
           </div>
 

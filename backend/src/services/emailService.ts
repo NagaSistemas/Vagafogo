@@ -32,6 +32,8 @@ type EmailConfig = {
   ativo?: boolean;
 };
 
+type EmailProvider = "smtp" | "resend";
+
 function parseBooleanEnv(value: string | undefined): boolean | undefined {
   if (!value) {
     return undefined;
@@ -48,7 +50,7 @@ function parseBooleanEnv(value: string | undefined): boolean | undefined {
   return undefined;
 }
 
-const SMTP_HOST = process.env.SMTP_HOST ?? "smtp.hostinger.com";
+const SMTP_HOST = process.env.SMTP_HOST ?? "smtp.gmail.com";
 const SMTP_PORT = Number(process.env.SMTP_PORT ?? 465);
 const SMTP_SECURE =
   (process.env.SMTP_SECURE ?? (SMTP_PORT === 465 ? "true" : "false"))
@@ -57,6 +59,17 @@ const SMTP_USER = (process.env.SMTP_USER ?? "").trim();
 const SMTP_PASS = (process.env.SMTP_PASS ?? "").trim();
 const SMTP_NAME = process.env.SMTP_FROM_NAME ?? "Vagafogo Reservas";
 const SMTP_FROM = (process.env.SMTP_FROM ?? SMTP_USER).trim();
+const RESEND_API_URL = "https://api.resend.com/emails";
+const RESEND_API_KEY = (process.env.RESEND_API_KEY ?? "").trim();
+const RESEND_FROM = (process.env.RESEND_FROM ?? "").trim();
+const RESEND_REPLY_TO = (process.env.RESEND_REPLY_TO ?? "").trim();
+const RESEND_TIMEOUT_MS = Number(process.env.RESEND_TIMEOUT ?? 15000);
+const EMAIL_PROVIDER: EmailProvider =
+  (process.env.EMAIL_PROVIDER ?? (RESEND_API_KEY ? "resend" : "smtp"))
+    .trim()
+    .toLowerCase() === "resend"
+    ? "resend"
+    : "smtp";
 const EMAIL_CONFIRMATION_ENABLED = parseBooleanEnv(
   process.env.EMAIL_CONFIRMATION_ENABLED,
 );
@@ -69,6 +82,12 @@ const RETRIABLE_ERRORS = new Set([
   "ESOCKET",
   "ECONNRESET",
   "EAI_AGAIN",
+]);
+const RESEND_RETRIABLE_ERRORS = new Set([
+  "RESEND_NETWORK",
+  "RESEND_TIMEOUT",
+  "RESEND_RATE_LIMIT",
+  "RESEND_SERVER",
 ]);
 
 const EMAIL_SUBJECT_PADRAO = "Confirmacao de Reserva - Vagafogo";
@@ -105,7 +124,23 @@ export function isEmailConfirmacaoHabilitada(): boolean {
     return EMAIL_CONFIRMATION_ENABLED;
   }
 
+  return hasEmailProviderConfig();
+}
+
+function hasEmailProviderConfig() {
+  if (EMAIL_PROVIDER === "resend") {
+    return Boolean(RESEND_API_KEY && RESEND_FROM);
+  }
+
   return Boolean(SMTP_USER && SMTP_PASS);
+}
+
+function getMissingConfigMessage() {
+  if (EMAIL_PROVIDER === "resend") {
+    return "RESEND_API_KEY/RESEND_FROM não configurados.";
+  }
+
+  return "SMTP_USER/SMTP_PASS não configurados.";
 }
 
 function getTransporter() {
@@ -146,7 +181,10 @@ async function ensureTransporterReady(): Promise<void> {
       })
       .catch((error) => {
         transporterVerified = null;
-        console.error("[email] SMTP verification failed:", error?.message);
+        console.error(
+          `[email] SMTP verification failed at ${SMTP_HOST}:${SMTP_PORT} (secure=${SMTP_SECURE}):`,
+          error?.message,
+        );
         throw error;
       });
   }
@@ -162,8 +200,42 @@ function shouldRetry(error: unknown, attempt: number) {
     return false;
   }
 
+  return isRetryableEmailError(error);
+}
+
+export function isEmailConnectivityError(error: unknown) {
+  if ((error as { fatalEmailProvider?: boolean })?.fatalEmailProvider === true) {
+    return true;
+  }
+
+  return isRetryableEmailError(error);
+}
+
+function isRetryableEmailError(error: unknown) {
   const code = (error as { code?: string })?.code;
-  return code ? RETRIABLE_ERRORS.has(code) : false;
+  return code
+    ? RETRIABLE_ERRORS.has(code) || RESEND_RETRIABLE_ERRORS.has(code)
+    : false;
+}
+
+function createEmailProviderError(
+  message: string,
+  code: string,
+  options: { status?: number; fatal?: boolean } = {},
+) {
+  const error = new Error(message) as Error & {
+    code?: string;
+    status?: number;
+    fatalEmailProvider?: boolean;
+  };
+  error.code = code;
+  if (options.status !== undefined) {
+    error.status = options.status;
+  }
+  if (options.fatal) {
+    error.fatalEmailProvider = true;
+  }
+  return error;
 }
 
 function sanitize(value: string) {
@@ -289,7 +361,121 @@ async function buildEmailConfirmacao(payload: EmailConfirmacaoPayload) {
   };
 }
 
-async function sendWithRetry(params: {
+function formatResendErrorBody(data: unknown) {
+  if (!data || typeof data !== "object") {
+    return "";
+  }
+
+  const body = data as Record<string, any>;
+  if (typeof body.message === "string") {
+    return body.message;
+  }
+  if (typeof body.error === "string") {
+    return body.error;
+  }
+  if (body.error && typeof body.error.message === "string") {
+    return body.error.message;
+  }
+  if (typeof body.name === "string") {
+    return body.name;
+  }
+
+  return "";
+}
+
+function createResendHttpError(status: number, message: string) {
+  if (status === 401 || status === 403) {
+    return createEmailProviderError(message, "RESEND_AUTH", {
+      status,
+      fatal: true,
+    });
+  }
+
+  if (status === 429) {
+    return createEmailProviderError(message, "RESEND_RATE_LIMIT", {
+      status,
+      fatal: true,
+    });
+  }
+
+  if (status >= 500) {
+    return createEmailProviderError(message, "RESEND_SERVER", {
+      status,
+      fatal: true,
+    });
+  }
+
+  if (status === 400) {
+    return createEmailProviderError(message, "RESEND_VALIDATION", {
+      status,
+      fatal: true,
+    });
+  }
+
+  return createEmailProviderError(message, `RESEND_HTTP_${status}`, {
+    status,
+  });
+}
+
+async function sendResendEmail(params: {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), RESEND_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(RESEND_API_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${RESEND_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: RESEND_FROM,
+        to: [params.to],
+        subject: params.subject,
+        html: params.html,
+        text: params.text,
+        reply_to: RESEND_REPLY_TO || undefined,
+      }),
+      signal: controller.signal,
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const detalhe = formatResendErrorBody(data);
+      const message = detalhe
+        ? `Resend API ${response.status}: ${detalhe}`
+        : `Resend API ${response.status}`;
+      throw createResendHttpError(response.status, message);
+    }
+
+    return data as { id?: string };
+  } catch (error: any) {
+    if (error?.name === "AbortError") {
+      throw createEmailProviderError("Resend API timeout", "RESEND_TIMEOUT", {
+        fatal: true,
+      });
+    }
+
+    if (error?.code) {
+      throw error;
+    }
+
+    throw createEmailProviderError(
+      error?.message || "Falha ao conectar na API do Resend",
+      "RESEND_NETWORK",
+      { fatal: true },
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function sendEmailWithRetry(params: {
   to: string;
   subject: string;
   html: string;
@@ -298,6 +484,14 @@ async function sendWithRetry(params: {
   let lastError: unknown = new Error("Email sending failed");
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
+      if (EMAIL_PROVIDER === "resend") {
+        const info = await sendResendEmail(params);
+        console.log(
+          `[email] enviado via Resend para ${params.to} | tentativa ${attempt} | id: ${info.id ?? "sem-id"}`,
+        );
+        return { enviado: true as const };
+      }
+
       await ensureTransporterReady();
       const info = await getTransporter().sendMail({
         from: `${SMTP_NAME} <${SMTP_FROM}>`,
@@ -308,7 +502,7 @@ async function sendWithRetry(params: {
       });
 
       console.log(
-        `[email] enviado para ${params.to} | tentativa ${attempt} | id: ${info.messageId}`,
+        `[email] enviado via SMTP para ${params.to} | tentativa ${attempt} | id: ${info.messageId}`,
       );
       return { enviado: true as const };
     } catch (error) {
@@ -344,13 +538,13 @@ export async function enviarEmailConfirmacao(
     return { enviado: false, motivo: "DISABLED" };
   }
 
-  if (!SMTP_USER || !SMTP_PASS) {
-    console.error("[email] SMTP_USER/SMTP_PASS não configurados.");
+  if (!hasEmailProviderConfig()) {
+    console.error(`[email] ${getMissingConfigMessage()}`);
     return { enviado: false, motivo: "MISSING_CONFIG" };
   }
 
   const email = await buildEmailConfirmacao(payload);
-  await sendWithRetry({
+  await sendEmailWithRetry({
     to: payload.email,
     subject: email.subject,
     html: email.html,
@@ -366,12 +560,12 @@ export async function enviarEmailPersonalizado(
     return { enviado: false, motivo: "DISABLED" };
   }
 
-  if (!SMTP_USER || !SMTP_PASS) {
-    console.error("[email] SMTP_USER/SMTP_PASS não configurados.");
+  if (!hasEmailProviderConfig()) {
+    console.error(`[email] ${getMissingConfigMessage()}`);
     return { enviado: false, motivo: "MISSING_CONFIG" };
   }
 
-  await sendWithRetry({
+  await sendEmailWithRetry({
     to: payload.to,
     subject: payload.subject,
     html: `<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">${textToHtml(payload.message)}</div>`,

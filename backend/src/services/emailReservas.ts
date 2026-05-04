@@ -13,6 +13,7 @@ import {
   enviarEmailConfirmacao,
   enviarEmailPersonalizado,
   isEmailConfirmacaoHabilitada,
+  isEmailConnectivityError,
 } from "./emailService";
 
 type ReservaEmail = Record<string, any>;
@@ -118,6 +119,8 @@ export async function processarEmailsConfirmacaoPendentes() {
   let emailsEnviados = 0;
   let emailsIgnorados = 0;
   let falhas = 0;
+  let interrompidoPorConexao = false;
+  let erroGeral = "";
 
   for (const docSnap of snapshot.docs) {
     const reserva = docSnap.data() as ReservaEmail;
@@ -135,11 +138,21 @@ export async function processarEmailsConfirmacaoPendentes() {
       }
     } catch (error: any) {
       falhas += 1;
+      const mensagemErro = error?.message || "Erro ao enviar email";
       await updateDoc(doc(db, "reservas", docSnap.id), {
-        emailErro: error?.message || "Erro ao enviar email",
+        emailErro: mensagemErro,
         dataEmailErro: new Date(),
       }).catch(() => undefined);
       console.error(`[email] erro ao enviar confirmacao ${docSnap.id}:`, error);
+
+      if (isEmailConnectivityError(error)) {
+        interrompidoPorConexao = true;
+        erroGeral = `Provedor de email indisponivel: ${mensagemErro}`;
+        console.error(
+          "[email] processamento interrompido para evitar novas tentativas com provedor indisponivel.",
+        );
+        break;
+      }
     }
   }
 
@@ -148,6 +161,8 @@ export async function processarEmailsConfirmacaoPendentes() {
     emailsEnviados,
     emailsIgnorados,
     falhas,
+    interrompidoPorConexao,
+    erroGeral,
   };
 }
 
