@@ -2,7 +2,7 @@ import type { Request, Response } from "express";
 import { criarReserva } from "./reservas";
 import { reservaContaParaOcupacao } from "./reservaStatus";
 import { obterCamposRetencaoReservaNaAtualizacao } from "./reservaRetention";
-import { enviarConfirmacaoWhatsapp } from "./whatsapp";
+import { enviarEmailConfirmacaoReserva } from "./emailReservas";
 import { getDocs, collection, query, where, doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "./firebase";
 import { PerguntaPersonalizadaResposta } from "../types/perguntasPersonalizadas";
@@ -798,8 +798,9 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
           }),
         });
 
-        const resultadoWhatsapp = await enviarConfirmacaoWhatsapp(reservaId, {
+        const resultadoEmail = await enviarEmailConfirmacaoReserva(reservaId, {
           nome,
+          email,
           telefone,
           atividade,
           data,
@@ -807,18 +808,15 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
           participantes: participantesConsiderados,
           valor,
           status: "pago",
-        });
+        }, reservaRef);
 
-        if (resultadoWhatsapp.enviado) {
-          await updateDoc(reservaRef, {
-            whatsappEnviado: true,
-            dataWhatsappEnviado: new Date(),
-            whatsappMensagem: resultadoWhatsapp.mensagem ?? "",
-            whatsappTelefone: resultadoWhatsapp.telefone ?? "",
-          });
+        if (!resultadoEmail.enviado) {
+          console.warn(
+            `Email imediato nao enviado para ${reservaId}: ${resultadoEmail.motivo}`,
+          );
         }
       } catch (error) {
-        console.error("Erro ao enviar WhatsApp imediato:", error);
+        console.error("Erro ao enviar email imediato:", error);
       }
     }
 

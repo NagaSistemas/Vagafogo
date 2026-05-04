@@ -3,17 +3,16 @@ import cors from "cors";
 import { criarCobrancaHandler } from "../services/assas";
 import "dotenv/config";
 import webhookRouter from "./webhook";
-import {
-  desconectarWhatsApp,
-  iniciarWhatsApp,
-  obterStatusWhatsApp,
-  processarPendentesWhatsapp,
-} from "../services/whatsapp";
 import apiRouter from "./api";
 import {
   iniciarLimpezaAutomaticaReservas,
   obterCamposRetencaoReservaNaAtualizacao,
 } from "../services/reservaRetention";
+import {
+  enviarEmailManual,
+  processarEmailsConfirmacaoPendentes,
+} from "../services/emailReservas";
+import { enviarBoasVindasWhatsapp } from "../services/whatsapp";
 
 const app = express();
 
@@ -35,40 +34,6 @@ app.post('/webhook-test', (req, res) => {
 app.post("/criar-cobranca", criarCobrancaHandler);
 app.use('/webhook', webhookRouter);
 app.use('/api', apiRouter);
-
-const aplicarNoCache = (res: express.Response) => {
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
-};
-
-app.get("/whatsapp/status", (_req, res) => {
-  aplicarNoCache(res);
-  iniciarWhatsApp();
-  res.json(obterStatusWhatsApp());
-});
-
-app.post("/whatsapp/start", (_req, res) => {
-  aplicarNoCache(res);
-  iniciarWhatsApp();
-  res.json(obterStatusWhatsApp());
-});
-
-app.post("/whatsapp/logout", async (_req, res) => {
-  aplicarNoCache(res);
-  await desconectarWhatsApp();
-  res.json(obterStatusWhatsApp());
-});
-
-app.post("/whatsapp/process-pending", async (_req, res) => {
-  try {
-    const resultado = await processarPendentesWhatsapp();
-    res.json(resultado);
-  } catch (error) {
-    console.error("Erro ao processar pendencias do WhatsApp:", error);
-    res.status(500).json({ error: "Erro ao processar pendencias do WhatsApp" });
-  }
-});
 
 // Endpoint para testar atualização de status (apenas para debug)
 app.post('/test-update-status/:reservaId', async (req, res) => {
@@ -104,69 +69,86 @@ app.post('/test-update-status/:reservaId', async (req, res) => {
 });
 
 // Endpoint para processar emails de confirmação
-  app.post('/process-emails', async (req, res) => {
+app.post('/process-emails', async (_req, res) => {
   try {
-    const { collection, query, where, getDocs, getDoc, doc } = await import('firebase/firestore');
-    const { db } = await import('../services/firebase');
-    const { enviarEmailConfirmacao, isEmailConfirmacaoHabilitada } = await import('../services/emailService');
-
-    if (!isEmailConfirmacaoHabilitada()) {
-      return res.json({
-        success: true,
-        emailsEnviados: 0,
-        emailHabilitado: false,
-        message: 'Envio de email desabilitado (EMAIL_CONFIRMATION_ENABLED=false ou SMTP não configurado)'
-      });
-    }
-    
-    // Buscar reservas pagas sem email enviado
-    const q = query(
-      collection(db, 'reservas'),
-      where('status', '==', 'pago')
-    );
-    
-    const snapshot = await getDocs(q);
-    let emailsEnviados = 0;
-    
-    for (const docSnap of snapshot.docs) {
-      const reserva = docSnap.data();
-      
-      // Verificar se já foi enviado email (evitar spam)
-      if (!reserva.emailEnviado) {
-        try {
-          const resultadoEmail = await enviarEmailConfirmacao({
-            nome: reserva.nome,
-            email: reserva.email,
-            atividade: reserva.atividade,
-            data: reserva.data,
-            horario: reserva.horario,
-            participantes: reserva.participantes,
-          });
-
-          if (!resultadoEmail.enviado) {
-            console.warn(`✉️ Email ignorado (${resultadoEmail.motivo}): ${reserva.email}`);
-            continue;
-          }
-          
-          // Marcar como enviado
-          const { updateDoc } = await import('firebase/firestore');
-          await updateDoc(doc(db, 'reservas', docSnap.id), {
-            emailEnviado: true,
-            dataEmailEnviado: new Date()
-          });
-          
-          emailsEnviados++;
-          console.log(`✉️ Email enviado: ${reserva.email}`);
-        } catch (emailError: any) {
-          console.error(`❌ Erro email ${reserva.email}:`, emailError?.message || emailError);
-        }
-      }
-    }
-    
-    res.json({ success: true, emailsEnviados });
+    const resultado = await processarEmailsConfirmacaoPendentes();
+    res.json({ success: true, ...resultado });
   } catch (error: any) {
     console.error('Erro ao processar emails:', error);
     res.status(500).json({ error: error?.message || 'Erro desconhecido' });
+  }
+});
+
+// Boas-vindas via WhatsApp ao marcar chegada do cliente
+app.post('/whatsapp/boas-vindas/:reservaId', async (req, res) => {
+  try {
+    const { reservaId } = req.params;
+    if (!reservaId) {
+      return res.status(400).json({ enviado: false, motivo: 'reserva_id_ausente' });
+    }
+
+    const { doc, getDoc, updateDoc } = await import('firebase/firestore');
+    const { db } = await import('../services/firebase');
+
+    const reservaRef = doc(db, 'reservas', reservaId);
+    const reservaSnap = await getDoc(reservaRef);
+    if (!reservaSnap.exists()) {
+      return res.status(404).json({ enviado: false, motivo: 'reserva_nao_encontrada' });
+    }
+
+    const reserva = reservaSnap.data() as Record<string, any>;
+
+    if (reserva.whatsappBoasVindasEnviado === true) {
+      return res.json({ enviado: false, motivo: 'ja_enviado' });
+    }
+
+    const resultado = await enviarBoasVindasWhatsapp(reservaId, reserva);
+
+    if (resultado.enviado) {
+      await updateDoc(reservaRef, {
+        whatsappBoasVindasEnviado: true,
+        dataWhatsappBoasVindas: new Date(),
+        whatsappBoasVindasMensagem: resultado.mensagem ?? '',
+      });
+    }
+
+    res.json(resultado);
+  } catch (error: any) {
+    console.error('Erro ao enviar boas-vindas WhatsApp:', error);
+    res.status(500).json({ enviado: false, motivo: error?.message || 'erro' });
+  }
+});
+
+app.post('/send-email', async (req, res) => {
+  try {
+    const to = typeof req.body?.to === 'string' ? req.body.to.trim() : '';
+    const subject = typeof req.body?.subject === 'string' ? req.body.subject.trim() : '';
+    const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+
+    if (!to || !subject || !message) {
+      res.status(400).json({
+        success: false,
+        error: 'Informe destinatario, assunto e mensagem.',
+      });
+      return;
+    }
+
+    const resultado = await enviarEmailManual({ to, subject, message });
+    if (!resultado.enviado) {
+      res.status(400).json({
+        success: false,
+        error:
+          resultado.motivo === 'MISSING_CONFIG'
+            ? 'SMTP nao configurado.'
+            : 'Envio de email desabilitado.',
+      });
+      return;
+    }
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Erro ao enviar email manual:', error);
+    res.status(500).json({ success: false, error: error?.message || 'Erro ao enviar email' });
   }
 });
 

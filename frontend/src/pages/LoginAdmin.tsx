@@ -75,7 +75,7 @@ export function LoginAdmin() {
             <div className="mt-8 space-y-2 text-left">
               {[
                 "Gestão de reservas em tempo real",
-                "Integração com WhatsApp",
+                "Confirmacoes por email",
                 "Relatórios e métricas",
               ].map((item, i) => (
                 <div key={i} className="flex items-center gap-2.5">

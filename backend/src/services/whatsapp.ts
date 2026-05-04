@@ -124,6 +124,7 @@ type WhatsappStatusPayload = {
 type WhatsappConfig = {
   ativo?: boolean;
   mensagemConfirmacao?: string;
+  mensagemBoasVindas?: string;
 };
 
 type ResultadoEnvio = {
@@ -141,6 +142,9 @@ type ResultadoProcessamento = {
 
 const TEMPLATE_PADRAO =
   "Olá {nome}! Sua reserva foi confirmada para {datareserva} às {horario}. Atividade: {atividade}. Participantes: {participantes}.";
+
+const TEMPLATE_BOAS_VINDAS_PADRAO =
+  "Olá {nome}! 🌿 Seja muito bem-vindo(a) ao Santuário Vagafogo. É um prazer receber você hoje! Tenha uma experiência incrível.";
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -633,6 +637,62 @@ export async function enviarConfirmacaoWhatsapp(
   } catch (error: any) {
     return { enviado: false, motivo: error?.message || "erro_envio" };
   }
+  return {
+    enviado: true,
+    mensagem,
+    telefone,
+  };
+}
+
+export async function enviarBoasVindasWhatsapp(
+  reservaId: string,
+  reserva: Record<string, any>,
+  configOverride?: WhatsappConfig
+): Promise<ResultadoEnvio> {
+  iniciarWhatsApp();
+
+  const config = configOverride ?? (await obterConfig());
+  if (!config.ativo) {
+    return { enviado: false, motivo: "config_desativado" };
+  }
+
+  const telefone = normalizarTelefone(reserva?.telefone);
+  if (!telefone) {
+    return { enviado: false, motivo: "telefone_invalido" };
+  }
+
+  const template = (config.mensagemBoasVindas || TEMPLATE_BOAS_VINDAS_PADRAO).trim();
+  if (!template) {
+    return { enviado: false, motivo: "mensagem_vazia" };
+  }
+
+  if (!client || status !== "ready") {
+    return { enviado: false, motivo: "whatsapp_nao_conectado" };
+  }
+
+  const mensagem = montarMensagem(template, {
+    ...reserva,
+    id: reservaId,
+  });
+
+  let whatsappId: string | null;
+  try {
+    whatsappId = await obterNumeroWhatsapp(telefone);
+  } catch (error) {
+    console.warn("[whatsapp] Falha ao validar numero (cliente indisponivel):", error);
+    handleInitFailure(error);
+    return { enviado: false, motivo: "whatsapp_nao_conectado" };
+  }
+  if (!whatsappId) {
+    return { enviado: false, motivo: "telefone_sem_whatsapp" };
+  }
+
+  try {
+    await client.sendMessage(whatsappId, mensagem, { sendSeen: false });
+  } catch (error: any) {
+    return { enviado: false, motivo: error?.message || "erro_envio" };
+  }
+
   return {
     enviado: true,
     mensagem,

@@ -1,17 +1,36 @@
 import nodemailer from "nodemailer";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "./firebase";
 
-type EmailConfirmacaoPayload = {
+export type EmailConfirmacaoPayload = {
+  codigoReserva?: string;
   nome: string;
   email: string;
   atividade: string;
   data: string;
   horario: string;
   participantes: number;
+  valor?: number | null;
 };
 
 type EmailConfirmacaoResultado =
   | { enviado: true }
   | { enviado: false; motivo: "DISABLED" | "MISSING_CONFIG" };
+
+type EmailPersonalizadoPayload = {
+  to: string;
+  subject: string;
+  message: string;
+};
+
+type MensagensEmailConfig = {
+  assuntoConfirmacaoEmail?: string;
+  mensagemConfirmacaoEmail?: string;
+};
+
+type EmailConfig = {
+  ativo?: boolean;
+};
 
 function parseBooleanEnv(value: string | undefined): boolean | undefined {
   if (!value) {
@@ -51,6 +70,22 @@ const RETRIABLE_ERRORS = new Set([
   "ECONNRESET",
   "EAI_AGAIN",
 ]);
+
+const EMAIL_SUBJECT_PADRAO = "Confirmacao de Reserva - Vagafogo";
+const EMAIL_TEMPLATE_PADRAO = [
+  "Ola, {nome}!",
+  "",
+  "Seu pagamento foi confirmado e sua reserva esta garantida.",
+  "",
+  "Codigo da reserva: {codigoReserva}",
+  "Atividade: {atividade}",
+  "Data: {datareserva}",
+  "Horario: {horario}",
+  "Participantes: {participantes}",
+  "Valor: {valor}",
+  "",
+  "Aguardamos voce no Vagafogo.",
+].join("\n");
 
 let transporter: nodemailer.Transporter | null = null;
 let transporterVerified: Promise<void> | null = null;
@@ -138,37 +173,118 @@ function sanitize(value: string) {
   });
 }
 
+function textToHtml(value: string) {
+  return sanitize(value).replace(/\n/g, "<br />");
+}
+
+function formatarDataReserva(valor: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(valor ?? "");
+  if (match) {
+    return `${match[3]}/${match[2]}/${match[1]}`;
+  }
+  return valor || "";
+}
+
+function formatCurrency(valor: number | null | undefined) {
+  const numero = Number(valor ?? 0);
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  }).format(Number.isFinite(numero) ? numero : 0);
+}
+
+function montarDadosEmail(payload: EmailConfirmacaoPayload) {
+  return {
+    codigoReserva: payload.codigoReserva ?? "",
+    nome: payload.nome ?? "",
+    datareserva: formatarDataReserva(payload.data),
+    data: formatarDataReserva(payload.data),
+    horario: payload.horario ?? "",
+    atividade: payload.atividade ?? "",
+    participantes: String(payload.participantes ?? ""),
+    valor: formatCurrency(payload.valor),
+    status: "pago",
+  };
+}
+
+function aplicarTemplate(template: string, dados: Record<string, string>) {
+  return template.replace(/\{([a-zA-Z0-9_]+)\}/g, (match, chave) => {
+    const valor = dados[chave];
+    return valor !== undefined ? valor : match;
+  });
+}
+
+async function obterConfigEmail(): Promise<EmailConfig> {
+  try {
+    const snap = await getDoc(doc(db, "configuracoes", "email"));
+    return snap.exists() ? (snap.data() as EmailConfig) : {};
+  } catch (error) {
+    console.warn("[email] Nao foi possivel carregar configuracao de email:", error);
+    return {};
+  }
+}
+
+async function obterConfigMensagens(): Promise<MensagensEmailConfig> {
+  try {
+    const snap = await getDoc(doc(db, "configuracoes", "mensagens"));
+    return snap.exists() ? (snap.data() as MensagensEmailConfig) : {};
+  } catch (error) {
+    console.warn("[email] Nao foi possivel carregar modelos de mensagem:", error);
+    return {};
+  }
+}
+
 function buildEmailHtml({
+  codigoReserva,
   nome,
   atividade,
   data,
   horario,
   participantes,
+  valor,
 }: EmailConfirmacaoPayload) {
   return `
     <h2>Ola, ${sanitize(nome)}!</h2>
-    <p>Recebemos sua reserva para a atividade <strong>${sanitize(atividade)}</strong>.</p>
+    <p>Seu pagamento foi confirmado e sua reserva esta garantida.</p>
     <p>
-      <strong>Data:</strong> ${sanitize(data)}<br />
+      ${codigoReserva ? `<strong>Codigo da reserva:</strong> ${sanitize(codigoReserva)}<br />` : ""}
+      <strong>Atividade:</strong> ${sanitize(atividade)}<br />
+      <strong>Data:</strong> ${sanitize(formatarDataReserva(data))}<br />
       <strong>Horario:</strong> ${sanitize(horario)}<br />
-      <strong>Participantes:</strong> ${participantes}
+      <strong>Participantes:</strong> ${participantes}<br />
+      <strong>Valor:</strong> ${sanitize(formatCurrency(valor))}
     </p>
     <p>Aguardamos voce.</p>
   `;
 }
 
-export async function enviarEmailConfirmacao(
-  payload: EmailConfirmacaoPayload,
-): Promise<EmailConfirmacaoResultado> {
-  if (!isEmailConfirmacaoHabilitada()) {
-    return { enviado: false, motivo: "DISABLED" };
+async function buildEmailConfirmacao(payload: EmailConfirmacaoPayload) {
+  const config = await obterConfigMensagens();
+  const template = (config.mensagemConfirmacaoEmail || EMAIL_TEMPLATE_PADRAO).trim();
+  const subject = (config.assuntoConfirmacaoEmail || EMAIL_SUBJECT_PADRAO).trim();
+
+  if (!template) {
+    return {
+      subject,
+      html: buildEmailHtml(payload),
+      text: "",
+    };
   }
 
-  if (!SMTP_USER || !SMTP_PASS) {
-    console.error("[email] SMTP_USER/SMTP_PASS não configurados.");
-    return { enviado: false, motivo: "MISSING_CONFIG" };
-  }
+  const text = aplicarTemplate(template, montarDadosEmail(payload));
+  return {
+    subject,
+    html: `<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">${textToHtml(text)}</div>`,
+    text,
+  };
+}
 
+async function sendWithRetry(params: {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+}) {
   await ensureTransporterReady();
 
   let lastError: unknown = new Error("Email sending failed");
@@ -176,15 +292,16 @@ export async function enviarEmailConfirmacao(
     try {
       const info = await getTransporter().sendMail({
         from: `${SMTP_NAME} <${SMTP_FROM}>`,
-        to: payload.email,
-        subject: "Confirmacao de Reserva",
-        html: buildEmailHtml(payload),
+        to: params.to,
+        subject: params.subject,
+        html: params.html,
+        text: params.text,
       });
 
       console.log(
-        `[email] confirmacao enviada para ${payload.email} | tentativa ${attempt} | id: ${info.messageId}`,
+        `[email] enviado para ${params.to} | tentativa ${attempt} | id: ${info.messageId}`,
       );
-      return { enviado: true };
+      return { enviado: true as const };
     } catch (error) {
       lastError = error;
       const message = (error as { message?: string })?.message ?? "unknown";
@@ -203,4 +320,52 @@ export async function enviarEmailConfirmacao(
   }
 
   throw lastError;
+}
+
+export async function enviarEmailConfirmacao(
+  payload: EmailConfirmacaoPayload,
+): Promise<EmailConfirmacaoResultado> {
+  if (!isEmailConfirmacaoHabilitada()) {
+    return { enviado: false, motivo: "DISABLED" };
+  }
+
+  const configEmail = await obterConfigEmail();
+  if (configEmail.ativo === false) {
+    return { enviado: false, motivo: "DISABLED" };
+  }
+
+  if (!SMTP_USER || !SMTP_PASS) {
+    console.error("[email] SMTP_USER/SMTP_PASS não configurados.");
+    return { enviado: false, motivo: "MISSING_CONFIG" };
+  }
+
+  const email = await buildEmailConfirmacao(payload);
+  await sendWithRetry({
+    to: payload.email,
+    subject: email.subject,
+    html: email.html,
+    text: email.text,
+  });
+  return { enviado: true };
+}
+
+export async function enviarEmailPersonalizado(
+  payload: EmailPersonalizadoPayload,
+): Promise<EmailConfirmacaoResultado> {
+  if (!isEmailConfirmacaoHabilitada()) {
+    return { enviado: false, motivo: "DISABLED" };
+  }
+
+  if (!SMTP_USER || !SMTP_PASS) {
+    console.error("[email] SMTP_USER/SMTP_PASS não configurados.");
+    return { enviado: false, motivo: "MISSING_CONFIG" };
+  }
+
+  await sendWithRetry({
+    to: payload.to,
+    subject: payload.subject,
+    html: `<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">${textToHtml(payload.message)}</div>`,
+    text: payload.message,
+  });
+  return { enviado: true };
 }

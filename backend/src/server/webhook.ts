@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
-import { enviarConfirmacaoWhatsapp } from "../services/whatsapp";
 import { obterCamposRetencaoReservaNaAtualizacao } from "../services/reservaRetention";
+import { enviarEmailConfirmacaoReserva } from "../services/emailReservas";
 
 type WebhookPayment = {
   status?: string;
@@ -130,32 +130,30 @@ async function handleWebhook(payload: WebhookPayload) {
   const reserva: Record<string, any> = {
     ...reservaExistente,
     status: "pago",
+    confirmada: true,
   };
-  if (!reserva.whatsappEnviado) {
-    try {
-      const resultado = await enviarConfirmacaoWhatsapp(externalReference, reserva);
-      if (resultado.enviado) {
-        await updateDoc(reservaRef, {
-          whatsappEnviado: true,
-          dataWhatsappEnviado: new Date(),
-          whatsappMensagem: resultado.mensagem ?? "",
-          whatsappTelefone: resultado.telefone ?? "",
-        });
-        console.log(`[webhook] WhatsApp enviado para ${externalReference}.`);
-      } else {
-        console.warn(
-          `[webhook] WhatsApp nao enviado para ${externalReference}: ${resultado.motivo}`,
-        );
-      }
-    } catch (error) {
-      console.error(
-        `[webhook] Erro ao enviar WhatsApp para ${externalReference}:`,
-        error,
+
+  try {
+    const resultadoEmail = await enviarEmailConfirmacaoReserva(
+      externalReference,
+      reserva,
+      reservaRef,
+    );
+    if (resultadoEmail.enviado) {
+      console.log(`[webhook] Email enviado para ${externalReference}.`);
+    } else {
+      console.warn(
+        `[webhook] Email nao enviado para ${externalReference}: ${resultadoEmail.motivo}`,
       );
     }
-  } else {
-    console.log(
-      `[webhook] WhatsApp ja havia sido enviado para ${externalReference}, ignorando duplicidade.`,
+  } catch (error: any) {
+    await updateDoc(reservaRef, {
+      emailErro: error?.message || "Erro ao enviar email",
+      dataEmailErro: new Date(),
+    }).catch(() => undefined);
+    console.error(
+      `[webhook] Erro ao enviar email para ${externalReference}:`,
+      error,
     );
   }
 
