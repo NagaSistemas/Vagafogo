@@ -90,6 +90,16 @@ const EMAIL_TEMPLATE_PADRAO = [
 let transporter: nodemailer.Transporter | null = null;
 let transporterVerified: Promise<void> | null = null;
 
+function resetTransporter() {
+  try {
+    transporter?.close();
+  } catch {
+    // noop
+  }
+  transporter = null;
+  transporterVerified = null;
+}
+
 export function isEmailConfirmacaoHabilitada(): boolean {
   if (EMAIL_CONFIRMATION_ENABLED !== undefined) {
     return EMAIL_CONFIRMATION_ENABLED;
@@ -285,11 +295,10 @@ async function sendWithRetry(params: {
   html: string;
   text?: string;
 }) {
-  await ensureTransporterReady();
-
   let lastError: unknown = new Error("Email sending failed");
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
+      await ensureTransporterReady();
       const info = await getTransporter().sendMail({
         from: `${SMTP_NAME} <${SMTP_FROM}>`,
         to: params.to,
@@ -306,6 +315,7 @@ async function sendWithRetry(params: {
       lastError = error;
       const message = (error as { message?: string })?.message ?? "unknown";
       const code = (error as { code?: string })?.code ?? "UNKNOWN";
+      resetTransporter();
       console.error(
         `[email] erro tentativa ${attempt}/${MAX_RETRIES} (${code}): ${message}`,
       );

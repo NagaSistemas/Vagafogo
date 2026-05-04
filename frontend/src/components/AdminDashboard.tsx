@@ -164,6 +164,18 @@ const montarMensagemWhatsApp = (template: string, dados: Record<string, string>)
     return valor !== undefined ? valor : match;
   });
 
+const normalizarTelefoneWhatsapp = (telefone?: string) => {
+  const digits = (telefone ?? '').replace(/\D/g, '');
+  if (!digits || digits.length < 10) return '';
+  if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) {
+    return digits;
+  }
+  if (digits.length === 10 || digits.length === 11) {
+    return `55${digits}`;
+  }
+  return digits;
+};
+
 interface PerguntaPersonalizadaResposta {
 
   pacoteId: string;
@@ -436,7 +448,7 @@ type NotificacaoNovaReserva = {
 
 type WhatsappEnvioModal = {
   reserva: Reserva;
-  emailDestino: string;
+  telefoneDestino: string;
   dadosMensagem: Record<string, string>;
   participantes: number;
   pacoteDescricao: string;
@@ -1368,8 +1380,6 @@ export default function AdminDashboard() {
   const [whatsappEnvioModeloId, setWhatsappEnvioModeloId] = useState<string>('padrao');
 
   const [whatsappEnvioMensagem, setWhatsappEnvioMensagem] = useState('');
-
-  const [emailEnvioEnviando, setEmailEnvioEnviando] = useState(false);
 
   const [whatsappStatus, setWhatsappStatus] = useState<WhatsappStatusPayload>({
     status: 'idle',
@@ -4936,10 +4946,10 @@ const totalParticipantesDoDia = useMemo(() => {
 
   const abrirEnvioWhatsapp = useCallback(
     (reserva: Reserva, participantes: number, pacoteDescricao: string, valorFormatado: string) => {
-      const emailDestino = (reserva.email || '').trim();
+      const telefoneDestino = normalizarTelefoneWhatsapp(reserva.telefone);
 
-      if (!emailDestino) {
-        setFeedback({ type: 'error', message: 'E-mail do cliente não informado.' });
+      if (!telefoneDestino) {
+        setFeedback({ type: 'error', message: 'Telefone/WhatsApp do cliente não informado.' });
         return;
       }
 
@@ -4962,7 +4972,7 @@ const totalParticipantesDoDia = useMemo(() => {
       setWhatsappEnvioMensagem(mensagem);
       setWhatsappEnvioModal({
         reserva,
-        emailDestino,
+        telefoneDestino,
         dadosMensagem,
         participantes,
         pacoteDescricao,
@@ -4971,7 +4981,7 @@ const totalParticipantesDoDia = useMemo(() => {
     [obterTemplateEnvioWhatsapp]
   );
 
-  const abrirWhatsapp = useCallback(async () => {
+  const abrirWhatsapp = useCallback(() => {
     if (!whatsappEnvioModal) return;
 
     const texto = whatsappEnvioMensagem.trim();
@@ -4980,29 +4990,15 @@ const totalParticipantesDoDia = useMemo(() => {
       return;
     }
 
-    setEmailEnvioEnviando(true);
-    try {
-      const response = await fetch(`${API_BASE}/send-email`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to: whatsappEnvioModal.emailDestino,
-          subject: `Vagafogo - reserva de ${formatarDataReserva(whatsappEnvioModal.reserva.data)}`,
-          message: texto,
-        }),
-      });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok || data?.success === false) {
-        throw new Error(data?.error || 'Erro ao enviar email.');
-      }
-      setFeedback({ type: 'success', message: 'Email enviado com sucesso.' });
-      fecharEnvioWhatsapp();
-    } catch (error: any) {
-      console.error('Erro ao enviar email manual:', error);
-      setFeedback({ type: 'error', message: error?.message || 'Erro ao enviar email.' });
-    } finally {
-      setEmailEnvioEnviando(false);
+    const link = `https://wa.me/${whatsappEnvioModal.telefoneDestino}?text=${encodeURIComponent(texto)}`;
+    const janela = window.open(link, '_blank');
+    if (!janela) {
+      setFeedback({ type: 'error', message: 'Não foi possível abrir o WhatsApp. Verifique o bloqueador de pop-ups.' });
+      return;
     }
+    janela.opener = null;
+    setFeedback({ type: 'success', message: 'WhatsApp aberto com a mensagem pronta para envio.' });
+    fecharEnvioWhatsapp();
   }, [fecharEnvioWhatsapp, whatsappEnvioMensagem, whatsappEnvioModal]);
 
 
@@ -6423,7 +6419,7 @@ const totalParticipantesDoDia = useMemo(() => {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-6 py-4">
-              <h4 className="text-lg font-semibold text-slate-900">Mensagem por email</h4>
+              <h4 className="text-lg font-semibold text-slate-900">Mensagem por WhatsApp</h4>
               <button
                 type="button"
                 onClick={fecharEnvioWhatsapp}
@@ -6501,11 +6497,10 @@ const totalParticipantesDoDia = useMemo(() => {
                 <button
                   type="button"
                   onClick={abrirWhatsapp}
-                  disabled={emailEnvioEnviando}
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
-                  <FaPaperPlane className="h-4 w-4" />
-                  {emailEnvioEnviando ? 'Enviando...' : 'Enviar email'}
+                  <FaWhatsapp className="h-4 w-4" />
+                  Abrir WhatsApp
                 </button>
               </div>
             </div>
@@ -8296,7 +8291,7 @@ const totalParticipantesDoDia = useMemo(() => {
                                   const pacotesEtiquetas = quebrarPacoteEmEtiquetas(pacoteDescricao);
                                   const valorFormatado = formatarValor(reserva.valor);
                                   const telefoneExibicao = reserva.telefone?.trim() || 'Sem telefone';
-                                  const podeEnviarEmail = Boolean((reserva.email || '').trim());
+                                  const podeEnviarWhatsapp = Boolean(normalizarTelefoneWhatsapp(reserva.telefone));
                                   const reservaManual = reserva.origem === 'manual';
                                   const reservaKey = reserva.id ?? `${reserva.nome || 'reserva'}-${reserva.cpf || 'cpf'}-${reserva.horario}-${normalizarDataReserva(reserva.data)}`;
                                   const perguntasRespondidas = obterPerguntasComResposta(reserva);
@@ -8432,12 +8427,12 @@ const totalParticipantesDoDia = useMemo(() => {
                                             <button
                                               type="button"
                                               onClick={() => abrirEnvioWhatsapp(reserva, participantes, pacoteDescricao, valorFormatado)}
-                                              disabled={!podeEnviarEmail}
+                                              disabled={!podeEnviarWhatsapp}
                                               className="admin-reservas-action-btn admin-reservas-action-btn--icon admin-reservas-action-btn--whatsapp"
-                                              aria-label="Enviar email"
-                                              title="Email"
+                                              aria-label="Abrir WhatsApp"
+                                              title="WhatsApp"
                                             >
-                                              <FaEnvelope className="h-3.5 w-3.5" />
+                                              <FaWhatsapp className="h-3.5 w-3.5" />
                                             </button>
 
                                             {reserva.linkPagamento && (
@@ -8654,7 +8649,7 @@ const totalParticipantesDoDia = useMemo(() => {
 
                                 const valorFormatado = formatarValor(reserva.valor);
 
-                                const podeEnviarEmail = Boolean((reserva.email || '').trim());
+                                const podeEnviarWhatsapp = Boolean(normalizarTelefoneWhatsapp(reserva.telefone));
 
                                 const reservaKey = reserva.id ?? `${reserva.nome || 'reserva'}-${reserva.cpf || 'cpf'}-${reserva.horario}-${normalizarDataReserva(reserva.data)}`;
 
@@ -8893,11 +8888,11 @@ const totalParticipantesDoDia = useMemo(() => {
                                                     abrirEnvioWhatsapp(reserva, participantes, pacoteDescricao, valorFormatado);
                                                     setMenuReservaAberto(null);
                                                   }}
-                                                  disabled={!podeEnviarEmail}
+                                                  disabled={!podeEnviarWhatsapp}
                                                   className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
-                                                  <FaEnvelope className="h-4 w-4 text-emerald-600" />
-                                                  <span>Email</span>
+                                                  <FaWhatsapp className="h-4 w-4 text-emerald-600" />
+                                                  <span>WhatsApp</span>
                                                 </button>
 
                                                 <button
@@ -9073,7 +9068,7 @@ const totalParticipantesDoDia = useMemo(() => {
                             const pacoteDescricao = formatarPacote(reserva);
                             const pacotesEtiquetas = quebrarPacoteEmEtiquetas(pacoteDescricao);
                             const valorFormatado = formatarValor(reserva.valor);
-                            const podeEnviarEmail = Boolean((reserva.email || '').trim());
+                            const podeEnviarWhatsapp = Boolean(normalizarTelefoneWhatsapp(reserva.telefone));
                             const reservaManual = reserva.origem === 'manual';
                             const reservaKey = reserva.id ?? `${reserva.nome || 'reserva'}-${reserva.cpf || 'cpf'}-${reserva.horario}-${normalizarDataReserva(reserva.data)}`;
                             const perguntasRespondidas = obterPerguntasComResposta(reserva);
@@ -9197,9 +9192,9 @@ const totalParticipantesDoDia = useMemo(() => {
                                       <span>{chegou ? 'Reverter chegada' : 'Marcar chegada'}</span>
                                     </button>
 
-                                    <button type="button" onClick={() => abrirEnvioWhatsapp(reserva, participantes, pacoteDescricao, valorFormatado)} disabled={!podeEnviarEmail} className="admin-reservas-action-btn admin-reservas-action-btn--whatsapp">
-                                      <FaEnvelope className="h-3.5 w-3.5" />
-                                      <span>Email</span>
+                                    <button type="button" onClick={() => abrirEnvioWhatsapp(reserva, participantes, pacoteDescricao, valorFormatado)} disabled={!podeEnviarWhatsapp} className="admin-reservas-action-btn admin-reservas-action-btn--whatsapp">
+                                      <FaWhatsapp className="h-3.5 w-3.5" />
+                                      <span>WhatsApp</span>
                                     </button>
 
                                     {reserva.linkPagamento && (
@@ -9352,7 +9347,7 @@ const totalParticipantesDoDia = useMemo(() => {
 
                             const valorFormatado = formatarValor(reserva.valor);
 
-                            const podeEnviarEmail = Boolean((reserva.email || '').trim());
+                            const podeEnviarWhatsapp = Boolean(normalizarTelefoneWhatsapp(reserva.telefone));
 
                             const reservaManual = reserva.origem === 'manual';
                             const reservaKey = reserva.id ?? `${reserva.nome || 'reserva'}-${reserva.cpf || 'cpf'}-${reserva.horario}-${normalizarDataReserva(reserva.data)}`;
@@ -9532,18 +9527,18 @@ const totalParticipantesDoDia = useMemo(() => {
                                         abrirEnvioWhatsapp(reserva, participantes, pacoteDescricao, valorFormatado)
                                       }
 
-                                      disabled={!podeEnviarEmail}
+                                      disabled={!podeEnviarWhatsapp}
 
                                       className="admin-reservas-action-btn admin-reservas-action-btn--whatsapp"
 
-                                      aria-label="Enviar email"
+                                      aria-label="Abrir WhatsApp"
 
-                                      title="Email"
+                                      title="WhatsApp"
 
                                     >
 
-                                      <FaEnvelope className="h-4 w-4" />
-                                      <span>Email</span>
+                                      <FaWhatsapp className="h-4 w-4" />
+                                      <span>WhatsApp</span>
 
                                     </button>
 
@@ -13424,7 +13419,7 @@ const totalParticipantesDoDia = useMemo(() => {
                     const participantes = calcularParticipantes(resultado);
                     const pacoteDescricao = formatarPacote(resultado);
                     const valorFormatado = formatarValor(resultado.valor);
-                    const podeEnviarEmail = Boolean((resultado.email || '').trim());
+                    const podeEnviarWhatsapp = Boolean(normalizarTelefoneWhatsapp(resultado.telefone));
 
                     return (
                       <tr key={resultado.id} className="hover:bg-slate-50/80">
@@ -13439,11 +13434,11 @@ const totalParticipantesDoDia = useMemo(() => {
                             onClick={() =>
                               abrirEnvioWhatsapp(resultado, participantes, pacoteDescricao, valorFormatado)
                             }
-                            disabled={!podeEnviarEmail}
+                            disabled={!podeEnviarWhatsapp}
                             className="inline-flex items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
                           >
-                            <FaEnvelope className="h-3.5 w-3.5" />
-                            Email
+                            <FaWhatsapp className="h-3.5 w-3.5" />
+                            WhatsApp
                           </button>
                         </td>
                       </tr>
