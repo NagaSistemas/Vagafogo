@@ -1,7 +1,7 @@
 import { Client, LocalAuth, RemoteAuth } from "whatsapp-web.js";
 import qrcode from "qrcode";
 import { doc, getDoc } from "firebase/firestore";
-import { rm } from "fs/promises";
+import { mkdir, rm } from "fs/promises";
 import path from "path";
 import { db } from "./firebase";
 import { obterStorageBucketAdmin } from "./firebaseAdmin";
@@ -79,6 +79,7 @@ class FirebaseStore {
   async extract({ session, path: destino }: { session: string; path: string }) {
     const remoto = this.destinationFor(session);
     try {
+      await mkdir(path.dirname(destino), { recursive: true });
       await this.bucket.file(remoto).download({ destination: destino });
     } catch (error) {
       console.error(`[whatsapp][store] extract FALHOU:`, error);
