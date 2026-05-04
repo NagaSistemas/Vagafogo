@@ -1,6 +1,6 @@
 import { Client, LocalAuth, RemoteAuth } from "whatsapp-web.js";
 import qrcode from "qrcode";
-import { collection, doc, getDoc, getDocs, query, updateDoc, where } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import { rm } from "fs/promises";
 import path from "path";
 import { db } from "./firebase";
@@ -122,8 +122,6 @@ type WhatsappStatusPayload = {
 };
 
 type WhatsappConfig = {
-  ativo?: boolean;
-  mensagemConfirmacao?: string;
   mensagemBoasVindas?: string;
 };
 
@@ -133,15 +131,6 @@ type ResultadoEnvio = {
   mensagem?: string;
   telefone?: string;
 };
-
-type ResultadoProcessamento = {
-  enviados: number;
-  falhas: number;
-  motivo?: string;
-};
-
-const TEMPLATE_PADRAO =
-  "Olá {nome}! Sua reserva foi confirmada para {datareserva} às {horario}. Atividade: {atividade}. Participantes: {participantes}.";
 
 const TEMPLATE_BOAS_VINDAS_PADRAO =
   "Olá {nome}! 🌿 Seja muito bem-vindo(a) ao Santuário Vagafogo. É um prazer receber você hoje! Tenha uma experiência incrível.";
@@ -191,7 +180,6 @@ let lastError: string | null = null;
 let lastQrAt: number | null = null;
 let lastInfo: WhatsappStatusPayload["info"] | null = null;
 let initializing = false;
-let processingPending = false;
 let initRetries = 0;
 let retryTimer: NodeJS.Timeout | null = null;
 
@@ -444,7 +432,6 @@ function registrarHandlersClient(): void {
       wid: client?.info?.wid?._serialized,
       pushname: client?.info?.pushname,
     };
-    void processarPendentesWhatsapp();
   });
 
   client.on("authenticated", () => {
@@ -589,61 +576,6 @@ const obterConfig = async (): Promise<WhatsappConfig> => {
   return snap.data() as WhatsappConfig;
 };
 
-export async function enviarConfirmacaoWhatsapp(
-  reservaId: string,
-  reserva: Record<string, any>,
-  configOverride?: WhatsappConfig
-): Promise<ResultadoEnvio> {
-  iniciarWhatsApp();
-
-  const config = configOverride ?? (await obterConfig());
-  if (!config.ativo) {
-    return { enviado: false, motivo: "config_desativado" };
-  }
-
-  const telefone = normalizarTelefone(reserva?.telefone);
-  if (!telefone) {
-    return { enviado: false, motivo: "telefone_invalido" };
-  }
-
-  const template = (config.mensagemConfirmacao || TEMPLATE_PADRAO).trim();
-  if (!template) {
-    return { enviado: false, motivo: "mensagem_vazia" };
-  }
-
-  if (!client || status !== "ready") {
-    return { enviado: false, motivo: "whatsapp_nao_conectado" };
-  }
-
-  const mensagem = montarMensagem(template, {
-    ...reserva,
-    id: reservaId,
-  });
-
-  let whatsappId: string | null;
-  try {
-    whatsappId = await obterNumeroWhatsapp(telefone);
-  } catch (error) {
-    console.warn("[whatsapp] Falha ao validar numero (cliente indisponivel):", error);
-    handleInitFailure(error);
-    return { enviado: false, motivo: "whatsapp_nao_conectado" };
-  }
-  if (!whatsappId) {
-    return { enviado: false, motivo: "telefone_sem_whatsapp" };
-  }
-
-  try {
-    await client.sendMessage(whatsappId, mensagem, { sendSeen: false });
-  } catch (error: any) {
-    return { enviado: false, motivo: error?.message || "erro_envio" };
-  }
-  return {
-    enviado: true,
-    mensagem,
-    telefone,
-  };
-}
-
 export async function enviarBoasVindasWhatsapp(
   reservaId: string,
   reserva: Record<string, any>,
@@ -652,9 +584,6 @@ export async function enviarBoasVindasWhatsapp(
   iniciarWhatsApp();
 
   const config = configOverride ?? (await obterConfig());
-  if (!config.ativo) {
-    return { enviado: false, motivo: "config_desativado" };
-  }
 
   const telefone = normalizarTelefone(reserva?.telefone);
   if (!telefone) {
@@ -698,78 +627,4 @@ export async function enviarBoasVindasWhatsapp(
     mensagem,
     telefone,
   };
-}
-
-export async function processarPendentesWhatsapp(): Promise<ResultadoProcessamento> {
-  if (processingPending) {
-    return { enviados: 0, falhas: 0, motivo: "em_andamento" };
-  }
-  processingPending = true;
-
-  try {
-    iniciarWhatsApp();
-
-    const config = await obterConfig();
-    if (!config.ativo) {
-      return { enviados: 0, falhas: 0, motivo: "config_desativado" };
-    }
-
-    if (!client || status !== "ready") {
-      return { enviados: 0, falhas: 0, motivo: "whatsapp_nao_conectado" };
-    }
-
-    const injecaoOk = await garantirInjecaoStore();
-    if (!injecaoOk) {
-      handleInitFailure(new Error("whatsapp_store_indisponivel"));
-      return { enviados: 0, falhas: 0, motivo: "whatsapp_nao_conectado" };
-    }
-
-    const statusElegiveis = ["pago", "Pago", "PAGO"];
-    const snapshot = await getDocs(
-      query(collection(db, "reservas"), where("status", "in", statusElegiveis))
-    );
-
-    let enviados = 0;
-    let falhas = 0;
-    const hoje = formatDateKey(new Date());
-
-    for (const docSnap of snapshot.docs) {
-      const reserva = docSnap.data() as Record<string, any>;
-      const dataReserva = obterDataReserva(reserva.data);
-      if (!dataReserva || dataReserva < hoje) {
-        continue;
-      }
-      if (reserva.whatsappEnviado === true) {
-        continue;
-      }
-
-      try {
-        const resultado = await enviarConfirmacaoWhatsapp(docSnap.id, reserva, config);
-        if (resultado.enviado) {
-          await updateDoc(doc(db, "reservas", docSnap.id), {
-            whatsappEnviado: true,
-            dataWhatsappEnviado: new Date(),
-            whatsappMensagem: resultado.mensagem ?? "",
-            whatsappTelefone: resultado.telefone ?? "",
-          });
-          enviados += 1;
-        } else {
-          falhas += 1;
-          console.warn(
-            `[whatsapp] pendente nao enviado ${docSnap.id}: ${resultado.motivo ?? "erro"}`
-          );
-        }
-      } catch (error) {
-        falhas += 1;
-        console.error(`[whatsapp] erro ao enviar ${docSnap.id}:`, error);
-      }
-    }
-
-    return { enviados, falhas };
-  } catch (error) {
-    console.error("[whatsapp] erro ao processar pendentes:", error);
-    return { enviados: 0, falhas: 0, motivo: "erro" };
-  } finally {
-    processingPending = false;
-  }
 }

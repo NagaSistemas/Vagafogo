@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { FaCalendarAlt, FaSignOutAlt, FaChartBar, FaEnvelope, FaClipboardList } from 'react-icons/fa';
+import { FaCalendarAlt, FaSignOutAlt, FaChartBar, FaEnvelope, FaWhatsapp } from 'react-icons/fa';
 import logo from '../assets/logo.jpg';
 
 const navItems = [
   { id: 'reservas', icon: FaCalendarAlt, label: 'Reservas', description: 'Gestão de agenda' },
   { id: 'dashboard', icon: FaChartBar, label: 'Relatórios', description: 'Métricas e resultados' },
   { id: 'email', icon: FaEnvelope, label: 'Email', description: 'Comunicacao' },
-  { id: 'mensagens', icon: FaClipboardList, label: 'Mensagens', description: 'Modelos' },
+  { id: 'whatsapp', icon: FaWhatsapp, label: 'WhatsApp', description: 'Modelos' },
 ];
 
 export function AdminSidebar() {

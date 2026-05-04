@@ -25,7 +25,6 @@ type Reserva = {
   confirmada?: boolean;
   naoConsomeDisponibilidade?: boolean;
   observacao?: string;
-  whatsappEnviado?: boolean;
   emailEnviado?: boolean;
   pacoteIds?: string[];
   comboId?: string;
