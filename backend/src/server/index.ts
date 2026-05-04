@@ -12,7 +12,12 @@ import {
   enviarEmailManual,
   processarEmailsConfirmacaoPendentes,
 } from "../services/emailReservas";
-import { enviarBoasVindasWhatsapp } from "../services/whatsapp";
+import {
+  desconectarWhatsApp,
+  enviarBoasVindasWhatsapp,
+  iniciarWhatsApp,
+  obterStatusWhatsApp,
+} from "../services/whatsapp";
 
 const app = express();
 
@@ -80,6 +85,25 @@ app.post('/process-emails', async (_req, res) => {
 });
 
 // Boas-vindas via WhatsApp ao marcar chegada do cliente
+app.get('/whatsapp/status', (_req, res) => {
+  res.json(obterStatusWhatsApp());
+});
+
+app.post('/whatsapp/start', (_req, res) => {
+  iniciarWhatsApp();
+  res.json(obterStatusWhatsApp());
+});
+
+app.post('/whatsapp/logout', async (_req, res) => {
+  try {
+    await desconectarWhatsApp();
+    res.json(obterStatusWhatsApp());
+  } catch (error: any) {
+    console.error('Erro ao desconectar WhatsApp:', error);
+    res.status(500).json({ error: error?.message || 'Erro ao desconectar WhatsApp' });
+  }
+});
+
 app.post('/whatsapp/boas-vindas/:reservaId', async (req, res) => {
   try {
     const { reservaId } = req.params;

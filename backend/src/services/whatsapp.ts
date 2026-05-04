@@ -151,7 +151,13 @@ const parseNumber = (value: string | undefined, fallback: number) => {
 
 const INIT_MAX_RETRIES = parseNumber(process.env.WHATSAPP_INIT_RETRIES, 3);
 const INIT_RETRY_DELAY_MS = parseNumber(process.env.WHATSAPP_INIT_RETRY_DELAY_MS, 5000);
-const WHATSAPP_CLIENT_ID = (process.env.WHATSAPP_CLIENT_ID ?? "vagafogo").trim() || "vagafogo";
+const WHATSAPP_CLIENT_ID =
+  (process.env.WHATSAPP_CLIENT_ID ?? "disparador-agradecimento").trim() ||
+  "disparador-agradecimento";
+const WHATSAPP_DEVICE_NAME =
+  (process.env.WHATSAPP_DEVICE_NAME ?? "Disparador Agradecimento").trim() ||
+  "Disparador Agradecimento";
+const WHATSAPP_BROWSER_NAME = (process.env.WHATSAPP_BROWSER_NAME ?? "Chrome").trim() || "Chrome";
 const WHATSAPP_AUTH_PATH = (process.env.WHATSAPP_AUTH_PATH ?? ".wwebjs_auth").trim() || ".wwebjs_auth";
 const WHATSAPP_AUTH_SESSION_PATH = path.resolve(
   process.cwd(),
@@ -395,6 +401,8 @@ export function iniciarWhatsApp(): void {
 
   client = new Client({
     authStrategy,
+    deviceName: WHATSAPP_DEVICE_NAME,
+    browserName: WHATSAPP_BROWSER_NAME,
     puppeteer: {
       args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
       ...(executablePath ? { executablePath } : {}),

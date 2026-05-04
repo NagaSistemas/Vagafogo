@@ -6,7 +6,7 @@ const navItems = [
   { id: 'reservas', icon: FaCalendarAlt, label: 'Reservas', description: 'Gestão de agenda' },
   { id: 'dashboard', icon: FaChartBar, label: 'Relatórios', description: 'Métricas e resultados' },
   { id: 'email', icon: FaEnvelope, label: 'Email', description: 'Comunicacao' },
-  { id: 'whatsapp', icon: FaWhatsapp, label: 'WhatsApp', description: 'Modelos' },
+  { id: 'whatsapp', icon: FaWhatsapp, label: 'WhatsApp', description: 'Disparador' },
 ];
 
 export function AdminSidebar() {

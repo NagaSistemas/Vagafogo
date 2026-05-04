@@ -28,7 +28,7 @@ import dayjs from 'dayjs';
 
 import 'dayjs/locale/pt-br';
 
-import { FaChevronLeft, FaChevronRight, FaChevronDown, FaChevronUp, FaTrash, FaEdit, FaPlus, FaSearch, FaCalendarAlt, FaUsers, FaLayerGroup, FaQuestionCircle, FaCheck, FaCreditCard, FaChair, FaEllipsisV, FaChartBar, FaFilePdf, FaEye, FaEyeSlash, FaSun, FaMoon, FaColumns, FaGripLines, FaUserCircle, FaUser, FaGraduationCap, FaPhoneAlt, FaIdCard, FaPaw, FaMoneyBillWave, FaClock, FaClipboardList, FaListUl, FaEnvelope, FaPaperPlane, FaWhatsapp } from 'react-icons/fa';
+import { FaChevronLeft, FaChevronRight, FaChevronDown, FaChevronUp, FaTrash, FaEdit, FaPlus, FaSearch, FaCalendarAlt, FaUsers, FaLayerGroup, FaQuestionCircle, FaCheck, FaCreditCard, FaChair, FaEllipsisV, FaChartBar, FaFilePdf, FaEye, FaEyeSlash, FaSun, FaMoon, FaColumns, FaGripLines, FaUserCircle, FaUser, FaGraduationCap, FaPhoneAlt, FaIdCard, FaPaw, FaMoneyBillWave, FaClock, FaClipboardList, FaListUl, FaEnvelope, FaPaperPlane, FaWhatsapp, FaQrcode, FaSyncAlt, FaSignOutAlt } from 'react-icons/fa';
 import logo from '../assets/logo.jpg';
 import './AdminDashboardTheme.css';
 
@@ -163,15 +163,6 @@ const montarMensagemWhatsApp = (template: string, dados: Record<string, string>)
     const valor = dados[chave];
     return valor !== undefined ? valor : match;
   });
-
-const normalizarTelefoneWhatsapp = (telefone?: string) => {
-  const digitos = String(telefone ?? '').replace(/\D/g, '');
-  if (!digitos) return '';
-  if (digitos.startsWith('55')) return digitos.length >= 12 ? digitos : '';
-  return digitos.length >= 10 ? `55${digitos}` : '';
-};
-
-
 
 interface PerguntaPersonalizadaResposta {
 
@@ -338,6 +329,19 @@ type AdminAba =
   | 'email'
   | 'whatsapp';
 
+type WhatsappConnectionStatus = 'idle' | 'initializing' | 'qr' | 'ready' | 'auth_failure' | 'disconnected';
+
+type WhatsappStatusPayload = {
+  status: WhatsappConnectionStatus;
+  qr?: string | null;
+  lastError?: string | null;
+  lastQrAt?: string | null;
+  info?: {
+    wid?: string;
+    pushname?: string;
+  };
+};
+
 interface WhatsappConfig {
   ativo: boolean;
   assuntoConfirmacaoEmail: string;
@@ -432,7 +436,7 @@ type NotificacaoNovaReserva = {
 
 type WhatsappEnvioModal = {
   reserva: Reserva;
-  telefoneDestino: string;
+  emailDestino: string;
   dadosMensagem: Record<string, string>;
   participantes: number;
   pacoteDescricao: string;
@@ -1364,6 +1368,17 @@ export default function AdminDashboard() {
   const [whatsappEnvioModeloId, setWhatsappEnvioModeloId] = useState<string>('padrao');
 
   const [whatsappEnvioMensagem, setWhatsappEnvioMensagem] = useState('');
+
+  const [emailEnvioEnviando, setEmailEnvioEnviando] = useState(false);
+
+  const [whatsappStatus, setWhatsappStatus] = useState<WhatsappStatusPayload>({
+    status: 'idle',
+    qr: null,
+  });
+
+  const [whatsappStatusCarregando, setWhatsappStatusCarregando] = useState(false);
+
+  const [whatsappAcaoCarregando, setWhatsappAcaoCarregando] = useState<'start' | 'logout' | null>(null);
 
    const [notificacaoNovaReserva, setNotificacaoNovaReserva] = useState<NotificacaoNovaReserva | null>(null);
 
@@ -2876,7 +2891,7 @@ const totalParticipantesDoDia = useMemo(() => {
 
     { id: 'email', label: 'Email', description: 'Confirmações automáticas', icon: FaEnvelope },
 
-    { id: 'whatsapp', label: 'WhatsApp', description: 'Mensagens e modelos', icon: FaWhatsapp },
+    { id: 'whatsapp', label: 'WhatsApp', description: 'QR e disparador', icon: FaWhatsapp },
 
     { id: 'pesquisa', label: 'Pesquisa', description: 'Histórico de reservas', icon: FaSearch },
 
@@ -2982,6 +2997,52 @@ const totalParticipantesDoDia = useMemo(() => {
     const template = whatsappConfig.mensagemConfirmacaoManual || whatsappTemplateMensagemManualPadrao;
     return montarMensagemWhatsApp(template, dadosExemploWhatsapp);
   }, [dadosExemploWhatsapp, whatsappConfig.mensagemConfirmacaoManual]);
+
+  const mensagemPreviewDisparadorAgradecimento = useMemo(() => {
+    const template = whatsappConfig.mensagemBoasVindas || whatsappTemplateBoasVindasPadrao;
+    return montarMensagemWhatsApp(template, dadosExemploWhatsapp);
+  }, [dadosExemploWhatsapp, whatsappConfig.mensagemBoasVindas]);
+
+  const whatsappStatusInfo = useMemo(() => {
+    switch (whatsappStatus.status) {
+      case 'ready':
+        return {
+          label: 'Conectado',
+          hint: whatsappStatus.info?.pushname || whatsappStatus.info?.wid || 'Sessao pronta para disparar',
+          tone: 'emerald' as const,
+        };
+      case 'qr':
+        return {
+          label: 'Aguardando QR',
+          hint: 'Leia o QR Code no WhatsApp do celular',
+          tone: 'amber' as const,
+        };
+      case 'initializing':
+        return {
+          label: 'Iniciando',
+          hint: 'Preparando a sessao do WhatsApp',
+          tone: 'sky' as const,
+        };
+      case 'auth_failure':
+        return {
+          label: 'Falha na conexao',
+          hint: whatsappStatus.lastError || 'Gere um novo QR Code',
+          tone: 'amber' as const,
+        };
+      case 'disconnected':
+        return {
+          label: 'Desconectado',
+          hint: whatsappStatus.lastError || 'Conecte para ativar o disparador',
+          tone: 'slate' as const,
+        };
+      default:
+        return {
+          label: 'Nao iniciado',
+          hint: 'Clique para conectar',
+          tone: 'slate' as const,
+        };
+    }
+  }, [whatsappStatus]);
 
   // Pesquisa Clientes
 
@@ -4582,7 +4643,7 @@ const totalParticipantesDoDia = useMemo(() => {
     }
 
     if (!mensagemManual) {
-      setFeedback({ type: 'error', message: 'Informe a mensagem do botão.' });
+      setFeedback({ type: 'error', message: 'Informe o modelo de email manual.' });
       return;
     }
 
@@ -4661,6 +4722,40 @@ const totalParticipantesDoDia = useMemo(() => {
 
   };
 
+  const salvarDisparadorWhatsapp = async () => {
+    const mensagemBoasVindas = (whatsappConfig.mensagemBoasVindas ?? '').trim();
+
+    if (!mensagemBoasVindas) {
+      setFeedback({ type: 'error', message: 'Informe a mensagem do Disparador Agradecimento.' });
+      return;
+    }
+
+    setWhatsappSalvando(true);
+
+    try {
+      await setDoc(
+        doc(db, 'configuracoes', 'whatsapp'),
+        {
+          mensagemBoasVindas,
+          atualizadoEm: new Date(),
+        },
+        { merge: true }
+      );
+
+      setWhatsappConfig((prev) => ({
+        ...prev,
+        mensagemBoasVindas,
+      }));
+
+      setFeedback({ type: 'success', message: 'Disparador Agradecimento salvo.' });
+    } catch (error) {
+      console.error('Erro ao salvar disparador WhatsApp:', error);
+      setFeedback({ type: 'error', message: 'Erro ao salvar disparador.' });
+    } finally {
+      setWhatsappSalvando(false);
+    }
+  };
+
   const processarEmailsPendentes = async () => {
     try {
       setWhatsappCarregando(true);
@@ -4681,6 +4776,77 @@ const totalParticipantesDoDia = useMemo(() => {
       setFeedback({ type: 'error', message: error?.message || 'Erro ao processar emails.' });
     } finally {
       setWhatsappCarregando(false);
+    }
+  };
+
+  const carregarStatusWhatsapp = useCallback(async () => {
+    try {
+      setWhatsappStatusCarregando(true);
+      const response = await fetch(`${API_BASE}/whatsapp/status`);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || `Status ${response.status}`);
+      }
+      setWhatsappStatus({
+        status: data?.status ?? 'idle',
+        qr: data?.qr ?? null,
+        lastError: data?.lastError ?? null,
+        lastQrAt: data?.lastQrAt ?? null,
+        info: data?.info,
+      });
+    } catch (error: any) {
+      console.error('Erro ao carregar status do WhatsApp:', error);
+      setFeedback({ type: 'error', message: error?.message || 'Erro ao carregar status do WhatsApp.' });
+    } finally {
+      setWhatsappStatusCarregando(false);
+    }
+  }, []);
+
+  const iniciarConexaoWhatsapp = async () => {
+    try {
+      setWhatsappAcaoCarregando('start');
+      const response = await fetch(`${API_BASE}/whatsapp/start`, { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || `Status ${response.status}`);
+      }
+      setWhatsappStatus({
+        status: data?.status ?? 'initializing',
+        qr: data?.qr ?? null,
+        lastError: data?.lastError ?? null,
+        lastQrAt: data?.lastQrAt ?? null,
+        info: data?.info,
+      });
+      setFeedback({ type: 'success', message: 'Conexao do Disparador Agradecimento iniciada.' });
+    } catch (error: any) {
+      console.error('Erro ao iniciar WhatsApp:', error);
+      setFeedback({ type: 'error', message: error?.message || 'Erro ao iniciar WhatsApp.' });
+    } finally {
+      setWhatsappAcaoCarregando(null);
+    }
+  };
+
+  const desconectarConexaoWhatsapp = async () => {
+    try {
+      setWhatsappAcaoCarregando('logout');
+      const response = await fetch(`${API_BASE}/whatsapp/logout`, { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.error || `Status ${response.status}`);
+      }
+      setWhatsappStatus({
+        status: data?.status ?? 'disconnected',
+        qr: data?.qr ?? null,
+        lastError: data?.lastError ?? null,
+        lastQrAt: data?.lastQrAt ?? null,
+        info: data?.info,
+      });
+      setFeedback({ type: 'success', message: 'Disparador Agradecimento desconectado.' });
+    } catch (error: any) {
+      console.error('Erro ao desconectar WhatsApp:', error);
+      setFeedback({ type: 'error', message: error?.message || 'Erro ao desconectar WhatsApp.' });
+    } finally {
+      setWhatsappAcaoCarregando(null);
     }
   };
 
@@ -4770,10 +4936,10 @@ const totalParticipantesDoDia = useMemo(() => {
 
   const abrirEnvioWhatsapp = useCallback(
     (reserva: Reserva, participantes: number, pacoteDescricao: string, valorFormatado: string) => {
-      const telefoneDestino = normalizarTelefoneWhatsapp(reserva.telefone);
+      const emailDestino = (reserva.email || '').trim();
 
-      if (!telefoneDestino) {
-        setFeedback({ type: 'error', message: 'Telefone do cliente não informado.' });
+      if (!emailDestino) {
+        setFeedback({ type: 'error', message: 'E-mail do cliente não informado.' });
         return;
       }
 
@@ -4796,7 +4962,7 @@ const totalParticipantesDoDia = useMemo(() => {
       setWhatsappEnvioMensagem(mensagem);
       setWhatsappEnvioModal({
         reserva,
-        telefoneDestino,
+        emailDestino,
         dadosMensagem,
         participantes,
         pacoteDescricao,
@@ -4805,7 +4971,7 @@ const totalParticipantesDoDia = useMemo(() => {
     [obterTemplateEnvioWhatsapp]
   );
 
-  const abrirWhatsapp = useCallback(() => {
+  const abrirWhatsapp = useCallback(async () => {
     if (!whatsappEnvioModal) return;
 
     const texto = whatsappEnvioMensagem.trim();
@@ -4814,10 +4980,29 @@ const totalParticipantesDoDia = useMemo(() => {
       return;
     }
 
-    const url = `https://wa.me/${whatsappEnvioModal.telefoneDestino}?text=${encodeURIComponent(texto)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
-    setFeedback({ type: 'success', message: 'WhatsApp aberto com a mensagem preparada.' });
-    fecharEnvioWhatsapp();
+    setEmailEnvioEnviando(true);
+    try {
+      const response = await fetch(`${API_BASE}/send-email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to: whatsappEnvioModal.emailDestino,
+          subject: `Vagafogo - reserva de ${formatarDataReserva(whatsappEnvioModal.reserva.data)}`,
+          message: texto,
+        }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.error || 'Erro ao enviar email.');
+      }
+      setFeedback({ type: 'success', message: 'Email enviado com sucesso.' });
+      fecharEnvioWhatsapp();
+    } catch (error: any) {
+      console.error('Erro ao enviar email manual:', error);
+      setFeedback({ type: 'error', message: error?.message || 'Erro ao enviar email.' });
+    } finally {
+      setEmailEnvioEnviando(false);
+    }
   }, [fecharEnvioWhatsapp, whatsappEnvioMensagem, whatsappEnvioModal]);
 
 
@@ -5010,6 +5195,17 @@ const totalParticipantesDoDia = useMemo(() => {
     void fetchWhatsappConfig();
 
   }, [fetchWhatsappConfig]);
+
+  useEffect(() => {
+    if (aba !== 'whatsapp') return;
+
+    void carregarStatusWhatsapp();
+    const intervalId = window.setInterval(() => {
+      void carregarStatusWhatsapp();
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [aba, carregarStatusWhatsapp]);
 
   const iniciarNovoTipoCliente = () => {
 
@@ -6227,7 +6423,7 @@ const totalParticipantesDoDia = useMemo(() => {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-200 px-4 sm:px-6 py-4">
-              <h4 className="text-lg font-semibold text-slate-900">Mensagem para WhatsApp</h4>
+              <h4 className="text-lg font-semibold text-slate-900">Mensagem por email</h4>
               <button
                 type="button"
                 onClick={fecharEnvioWhatsapp}
@@ -6275,7 +6471,7 @@ const totalParticipantesDoDia = useMemo(() => {
                 <button
                   type="button"
                   onClick={() => {
-                    setAba('whatsapp');
+                    setAba('email');
                     fecharEnvioWhatsapp();
                   }}
                   className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
@@ -6305,10 +6501,11 @@ const totalParticipantesDoDia = useMemo(() => {
                 <button
                   type="button"
                   onClick={abrirWhatsapp}
+                  disabled={emailEnvioEnviando}
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
-                  <FaWhatsapp className="h-4 w-4" />
-                  Abrir WhatsApp
+                  <FaPaperPlane className="h-4 w-4" />
+                  {emailEnvioEnviando ? 'Enviando...' : 'Enviar email'}
                 </button>
               </div>
             </div>
@@ -8099,7 +8296,7 @@ const totalParticipantesDoDia = useMemo(() => {
                                   const pacotesEtiquetas = quebrarPacoteEmEtiquetas(pacoteDescricao);
                                   const valorFormatado = formatarValor(reserva.valor);
                                   const telefoneExibicao = reserva.telefone?.trim() || 'Sem telefone';
-                                  const podeAbrirWhatsapp = Boolean(normalizarTelefoneWhatsapp(reserva.telefone));
+                                  const podeEnviarEmail = Boolean((reserva.email || '').trim());
                                   const reservaManual = reserva.origem === 'manual';
                                   const reservaKey = reserva.id ?? `${reserva.nome || 'reserva'}-${reserva.cpf || 'cpf'}-${reserva.horario}-${normalizarDataReserva(reserva.data)}`;
                                   const perguntasRespondidas = obterPerguntasComResposta(reserva);
@@ -8235,12 +8432,12 @@ const totalParticipantesDoDia = useMemo(() => {
                                             <button
                                               type="button"
                                               onClick={() => abrirEnvioWhatsapp(reserva, participantes, pacoteDescricao, valorFormatado)}
-                                              disabled={!podeAbrirWhatsapp}
+                                              disabled={!podeEnviarEmail}
                                               className="admin-reservas-action-btn admin-reservas-action-btn--icon admin-reservas-action-btn--whatsapp"
-                                              aria-label="Abrir WhatsApp"
-                                              title="WhatsApp"
+                                              aria-label="Enviar email"
+                                              title="Email"
                                             >
-                                              <FaWhatsapp className="h-3.5 w-3.5" />
+                                              <FaEnvelope className="h-3.5 w-3.5" />
                                             </button>
 
                                             {reserva.linkPagamento && (
@@ -8457,7 +8654,7 @@ const totalParticipantesDoDia = useMemo(() => {
 
                                 const valorFormatado = formatarValor(reserva.valor);
 
-                                const podeAbrirWhatsapp = Boolean(normalizarTelefoneWhatsapp(reserva.telefone));
+                                const podeEnviarEmail = Boolean((reserva.email || '').trim());
 
                                 const reservaKey = reserva.id ?? `${reserva.nome || 'reserva'}-${reserva.cpf || 'cpf'}-${reserva.horario}-${normalizarDataReserva(reserva.data)}`;
 
@@ -8696,11 +8893,11 @@ const totalParticipantesDoDia = useMemo(() => {
                                                     abrirEnvioWhatsapp(reserva, participantes, pacoteDescricao, valorFormatado);
                                                     setMenuReservaAberto(null);
                                                   }}
-                                                  disabled={!podeAbrirWhatsapp}
+                                                  disabled={!podeEnviarEmail}
                                                   className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-800 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
                                                 >
-                                                  <FaWhatsapp className="h-4 w-4 text-emerald-600" />
-                                                  <span>WhatsApp</span>
+                                                  <FaEnvelope className="h-4 w-4 text-emerald-600" />
+                                                  <span>Email</span>
                                                 </button>
 
                                                 <button
@@ -8876,7 +9073,7 @@ const totalParticipantesDoDia = useMemo(() => {
                             const pacoteDescricao = formatarPacote(reserva);
                             const pacotesEtiquetas = quebrarPacoteEmEtiquetas(pacoteDescricao);
                             const valorFormatado = formatarValor(reserva.valor);
-                            const podeAbrirWhatsapp = Boolean(normalizarTelefoneWhatsapp(reserva.telefone));
+                            const podeEnviarEmail = Boolean((reserva.email || '').trim());
                             const reservaManual = reserva.origem === 'manual';
                             const reservaKey = reserva.id ?? `${reserva.nome || 'reserva'}-${reserva.cpf || 'cpf'}-${reserva.horario}-${normalizarDataReserva(reserva.data)}`;
                             const perguntasRespondidas = obterPerguntasComResposta(reserva);
@@ -9000,9 +9197,9 @@ const totalParticipantesDoDia = useMemo(() => {
                                       <span>{chegou ? 'Reverter chegada' : 'Marcar chegada'}</span>
                                     </button>
 
-                                    <button type="button" onClick={() => abrirEnvioWhatsapp(reserva, participantes, pacoteDescricao, valorFormatado)} disabled={!podeAbrirWhatsapp} className="admin-reservas-action-btn admin-reservas-action-btn--whatsapp">
-                                      <FaWhatsapp className="h-3.5 w-3.5" />
-                                      <span>WhatsApp</span>
+                                    <button type="button" onClick={() => abrirEnvioWhatsapp(reserva, participantes, pacoteDescricao, valorFormatado)} disabled={!podeEnviarEmail} className="admin-reservas-action-btn admin-reservas-action-btn--whatsapp">
+                                      <FaEnvelope className="h-3.5 w-3.5" />
+                                      <span>Email</span>
                                     </button>
 
                                     {reserva.linkPagamento && (
@@ -9155,7 +9352,7 @@ const totalParticipantesDoDia = useMemo(() => {
 
                             const valorFormatado = formatarValor(reserva.valor);
 
-                            const podeAbrirWhatsapp = Boolean(normalizarTelefoneWhatsapp(reserva.telefone));
+                            const podeEnviarEmail = Boolean((reserva.email || '').trim());
 
                             const reservaManual = reserva.origem === 'manual';
                             const reservaKey = reserva.id ?? `${reserva.nome || 'reserva'}-${reserva.cpf || 'cpf'}-${reserva.horario}-${normalizarDataReserva(reserva.data)}`;
@@ -9335,18 +9532,18 @@ const totalParticipantesDoDia = useMemo(() => {
                                         abrirEnvioWhatsapp(reserva, participantes, pacoteDescricao, valorFormatado)
                                       }
 
-                                      disabled={!podeAbrirWhatsapp}
+                                      disabled={!podeEnviarEmail}
 
                                       className="admin-reservas-action-btn admin-reservas-action-btn--whatsapp"
 
-                                      aria-label="Abrir WhatsApp"
+                                      aria-label="Enviar email"
 
-                                      title="WhatsApp"
+                                      title="Email"
 
                                     >
 
-                                      <FaWhatsapp className="h-4 w-4" />
-                                      <span>WhatsApp</span>
+                                      <FaEnvelope className="h-4 w-4" />
+                                      <span>Email</span>
 
                                     </button>
 
@@ -12795,59 +12992,11 @@ const totalParticipantesDoDia = useMemo(() => {
             </div>
           </div>
 
-        </section>
-
-      )}
-
-      {/* ========== WhatsApp ========== */}
-
-      {aba === 'whatsapp' && (
-
-        <section className="admin-tab-content space-y-6">
-
-          <AdminTabHeader
-            title="WhatsApp"
-            description={'Configure a mensagem automatica de boas-vindas e os modelos usados no contato manual pelo WhatsApp.'}
-            icon={FaWhatsapp}
-            actions={[
-              {
-                label: 'Salvar modelos',
-                icon: FaCheck,
-                onClick: salvarWhatsappConfig,
-                variant: 'primary',
-                disabled: whatsappSalvando,
-              },
-            ]}
-            metrics={[
-              {
-                label: 'Boas-vindas',
-                value: whatsappConfig.mensagemBoasVindas.trim() ? 'Pronta' : 'Pendente',
-                hint: 'Disparo ao marcar chegada',
-                icon: FaWhatsapp,
-                tone: whatsappConfig.mensagemBoasVindas.trim() ? 'emerald' : 'amber',
-              },
-              {
-                label: 'Manual padrao',
-                value: whatsappConfig.mensagemConfirmacaoManual.trim() ? 'Pronto' : 'Pendente',
-                hint: 'Texto inicial do contato pelo WhatsApp',
-                icon: FaPaperPlane,
-                tone: whatsappConfig.mensagemConfirmacaoManual.trim() ? 'sky' : 'amber',
-              },
-              {
-                label: 'Modelos salvos',
-                value: ((whatsappConfig.modelosMensagemManual ?? []).length).toLocaleString('pt-BR'),
-                hint: 'Variacoes rapidas de atendimento',
-                icon: FaLayerGroup,
-                tone: 'indigo',
-              },
-            ]}
-          />
-
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="border-b border-slate-100 pb-4">
-                <h3 className="text-lg font-semibold text-slate-900">Mensagem manual</h3>
-                <p className="text-sm text-slate-500">Texto usado no envio manual a partir da reserva.</p>
+                <h3 className="text-lg font-semibold text-slate-900">Modelo de email manual</h3>
+                <p className="text-sm text-slate-500">Texto usado quando a equipe envia email direto pela reserva.</p>
               </div>
 
               <div className="mt-4 space-y-4">
@@ -12862,7 +13011,7 @@ const totalParticipantesDoDia = useMemo(() => {
                       }))
                     }
                     className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                    rows={8}
+                    rows={7}
                     placeholder={whatsappTemplateMensagemManualPadrao}
                   />
                 </label>
@@ -12870,7 +13019,7 @@ const totalParticipantesDoDia = useMemo(() => {
                 <div className="flex flex-wrap gap-2">
                   {whatsappPlaceholders.map((placeholder) => (
                     <button
-                      key={'manual-' + placeholder}
+                      key={'email-manual-' + placeholder}
                       type="button"
                       onClick={() => inserirPlaceholderWhatsapp('mensagemConfirmacaoManual', placeholder)}
                       className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-emerald-300 hover:text-emerald-600"
@@ -12881,38 +13030,229 @@ const totalParticipantesDoDia = useMemo(() => {
                 </div>
 
                 <div>
-                  <p className="text-xs font-semibold uppercase text-slate-500">Preview</p>
+                  <p className="text-xs font-semibold uppercase text-slate-500">Preview do email manual</p>
                   <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap">
                     {mensagemPreviewWhatsappManual || '-'}
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Modelos de email</h3>
+                  <p className="text-sm text-slate-500">Variações salvas para escolher antes do envio manual.</p>
+                </div>
 
                 <button
                   type="button"
-                  onClick={() =>
-                    setWhatsappConfig((prev) => ({
-                      ...prev,
-                      mensagemConfirmacaoManual: whatsappTemplateMensagemManualPadrao,
-                    }))
-                  }
-                  className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+                  onClick={adicionarModeloMensagemManual}
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
                 >
-                  Restaurar padrao
+                  <FaPlus className="h-3.5 w-3.5" />
+                  Novo modelo
                 </button>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {(whatsappConfig.modelosMensagemManual ?? []).length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">
+                    Nenhum modelo criado. Use &quot;Novo modelo&quot; para adicionar.
+                  </div>
+                ) : (
+                  (whatsappConfig.modelosMensagemManual ?? []).map((modelo) => (
+                    <div key={modelo.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <label className="flex-1 text-xs font-semibold uppercase text-slate-500">
+                          Titulo
+                          <input
+                            value={modelo.titulo}
+                            onChange={(e) => atualizarModeloMensagemManual(modelo.id, { titulo: e.target.value })}
+                            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                          />
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => removerModeloMensagemManual(modelo.id)}
+                          className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
+                        >
+                          <FaTrash className="h-3.5 w-3.5" />
+                          Excluir
+                        </button>
+                      </div>
+
+                      <label className="mt-3 block text-xs font-semibold uppercase text-slate-500">
+                        Mensagem
+                        <textarea
+                          value={modelo.mensagem}
+                          onChange={(e) => atualizarModeloMensagemManual(modelo.id, { mensagem: e.target.value })}
+                          rows={4}
+                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                          placeholder={whatsappTemplateMensagemManualPadrao}
+                        />
+                      </label>
+
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap">
+                        {modelo.mensagem?.trim()
+                          ? montarMensagemWhatsApp(modelo.mensagem, dadosExemploWhatsapp)
+                          : 'Preview do modelo'}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+        </section>
+
+      )}
+
+      {/* ========== WhatsApp ========== */}
+
+      {aba === 'whatsapp' && (
+
+        <section className="admin-tab-content space-y-6">
+
+          <AdminTabHeader
+            title="WhatsApp"
+            description={'Conecte o WhatsApp do Disparador Agradecimento e configure a mensagem automatica enviada ao marcar chegada.'}
+            icon={FaWhatsapp}
+            actions={[
+              {
+                label: whatsappStatus.status === 'ready' ? 'Atualizar status' : 'Gerar QR Code',
+                icon: whatsappStatus.status === 'ready' ? FaSyncAlt : FaQrcode,
+                onClick: whatsappStatus.status === 'ready' ? carregarStatusWhatsapp : iniciarConexaoWhatsapp,
+                variant: whatsappStatus.status === 'ready' ? undefined : 'primary',
+                disabled: whatsappStatusCarregando || whatsappAcaoCarregando === 'start',
+              },
+              {
+                label: 'Desconectar',
+                icon: FaSignOutAlt,
+                onClick: desconectarConexaoWhatsapp,
+                disabled: whatsappAcaoCarregando === 'logout' || whatsappStatus.status === 'idle',
+              },
+              {
+                label: 'Salvar disparador',
+                icon: FaCheck,
+                onClick: salvarDisparadorWhatsapp,
+                disabled: whatsappSalvando,
+              },
+            ]}
+            metrics={[
+              {
+                label: 'Conexao',
+                value: whatsappStatusInfo.label,
+                hint: whatsappStatusInfo.hint,
+                icon: FaWhatsapp,
+                tone: whatsappStatusInfo.tone,
+              },
+              {
+                label: 'Disparador',
+                value: 'Disparador Agradecimento',
+                hint: 'Nome exibido ao vincular pelo QR Code',
+                icon: FaQrcode,
+                tone: 'indigo',
+              },
+              {
+                label: 'Mensagem',
+                value: whatsappConfig.mensagemBoasVindas.trim() ? 'Pronta' : 'Pendente',
+                hint: 'Enviada quando a chegada e confirmada',
+                icon: FaClipboardList,
+                tone: whatsappConfig.mensagemBoasVindas.trim() ? 'emerald' : 'amber',
+              },
+            ]}
+          />
+
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Conexao via QR Code</h3>
+                  <p className="text-sm text-slate-500">Vincule o WhatsApp que enviara o Disparador Agradecimento.</p>
+                </div>
+
+                <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                  whatsappStatus.status === 'ready'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : whatsappStatus.status === 'qr'
+                      ? 'border-amber-200 bg-amber-50 text-amber-700'
+                      : 'border-slate-200 bg-slate-50 text-slate-600'
+                }`}>
+                  {whatsappStatusInfo.label}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+                <div className="flex min-h-[220px] items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4">
+                  {whatsappStatus.qr ? (
+                    <img
+                      src={whatsappStatus.qr}
+                      alt="QR Code do Disparador Agradecimento"
+                      className="h-48 w-48 rounded-lg bg-white object-contain p-2 shadow-sm"
+                    />
+                  ) : (
+                    <div className="text-center text-sm text-slate-500">
+                      <FaQrcode className="mx-auto h-10 w-10 text-slate-300" />
+                      <p className="mt-2 font-semibold text-slate-700">QR Code indisponivel</p>
+                      <p className="mt-1">Clique em Gerar QR Code para iniciar a conexao.</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+                    <p className="text-xs font-semibold uppercase text-slate-500">Nome da conexao</p>
+                    <p className="mt-1 text-base font-semibold text-slate-900">Disparador Agradecimento</p>
+                    <p className="mt-1 text-sm text-slate-500">Esse nome aparece nos dispositivos vinculados do WhatsApp.</p>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
+                    <p className="text-xs font-semibold uppercase text-slate-500">Estado atual</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-900">{whatsappStatusInfo.label}</p>
+                    <p className="mt-1 text-sm text-slate-500">{whatsappStatusInfo.hint}</p>
+                    {whatsappStatus.lastQrAt ? (
+                      <p className="mt-2 text-xs text-slate-400">
+                        QR gerado em {dayjs(whatsappStatus.lastQrAt).format('DD/MM/YYYY HH:mm')}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <button
+                      type="button"
+                      onClick={iniciarConexaoWhatsapp}
+                      disabled={whatsappAcaoCarregando === 'start'}
+                      className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                    >
+                      <FaQrcode className="h-3.5 w-3.5" />
+                      {whatsappAcaoCarregando === 'start' ? 'Iniciando...' : 'Gerar QR Code'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={carregarStatusWhatsapp}
+                      disabled={whatsappStatusCarregando}
+                      className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <FaSyncAlt className="h-3.5 w-3.5" />
+                      Atualizar
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
 
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5 shadow-sm">
               <div className="border-b border-emerald-100 pb-4">
-                <h3 className="text-lg font-semibold text-slate-900">Boas-vindas (chegada do cliente)</h3>
-                <p className="text-sm text-slate-500">
-                  Mensagem disparada automaticamente no WhatsApp do cliente quando você marca a chegada na agenda. Envia uma única vez por reserva.
-                </p>
+                <h3 className="text-lg font-semibold text-slate-900">Disparador Agradecimento</h3>
+                <p className="text-sm text-slate-500">Mensagem automatica enviada no WhatsApp quando a chegada do cliente e confirmada.</p>
               </div>
 
               <div className="mt-4 space-y-4">
                 <label className="text-xs font-semibold uppercase text-slate-500">
-                  Texto da boas-vindas
+                  Mensagem do disparador
                   <textarea
                     value={whatsappConfig.mensagemBoasVindas}
                     onChange={(e) =>
@@ -12940,6 +13280,13 @@ const totalParticipantesDoDia = useMemo(() => {
                   ))}
                 </div>
 
+                <div>
+                  <p className="text-xs font-semibold uppercase text-slate-500">Preview do disparador</p>
+                  <div className="mt-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-sm text-slate-700 whitespace-pre-wrap">
+                    {mensagemPreviewDisparadorAgradecimento || '-'}
+                  </div>
+                </div>
+
                 <button
                   type="button"
                   onClick={() =>
@@ -12953,91 +13300,6 @@ const totalParticipantesDoDia = useMemo(() => {
                   Restaurar padrao
                 </button>
               </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex flex-col gap-2 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">Modelos manuais</h3>
-                <p className="text-sm text-slate-500">Variacoes rapidas para responder clientes pelo WhatsApp.</p>
-              </div>
-
-              <button
-                type="button"
-                onClick={adicionarModeloMensagemManual}
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50"
-              >
-                <FaPlus className="h-3.5 w-3.5" />
-                Novo modelo
-              </button>
-            </div>
-
-            <div className="mt-4 space-y-3">
-              {(whatsappConfig.modelosMensagemManual ?? []).length === 0 ? (
-                <div className="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">
-                  Nenhum modelo criado. Use &quot;Novo modelo&quot; para adicionar.
-                </div>
-              ) : (
-                (whatsappConfig.modelosMensagemManual ?? []).map((modelo) => (
-                  <div key={modelo.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <label className="flex-1 text-xs font-semibold uppercase text-slate-500">
-                        Titulo
-                        <input
-                          value={modelo.titulo}
-                          onChange={(e) => atualizarModeloMensagemManual(modelo.id, { titulo: e.target.value })}
-                          className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                        />
-                      </label>
-
-                      <button
-                        type="button"
-                        onClick={() => removerModeloMensagemManual(modelo.id)}
-                        className="inline-flex items-center justify-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-100"
-                      >
-                        <FaTrash className="h-3.5 w-3.5" />
-                        Excluir
-                      </button>
-                    </div>
-
-                    <label className="mt-3 block text-xs font-semibold uppercase text-slate-500">
-                      Mensagem
-                      <textarea
-                        value={modelo.mensagem}
-                        onChange={(e) => atualizarModeloMensagemManual(modelo.id, { mensagem: e.target.value })}
-                        rows={4}
-                        className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
-                        placeholder={whatsappTemplateMensagemManualPadrao}
-                      />
-                    </label>
-
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {whatsappPlaceholders.map((placeholder) => (
-                        <button
-                          key={modelo.id + '-' + placeholder}
-                          type="button"
-                          onClick={() => inserirPlaceholderModeloMensagemManual(modelo.id, placeholder)}
-                          className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-emerald-300 hover:text-emerald-600"
-                        >
-                          {placeholder}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={salvarWhatsappConfig}
-                disabled={whatsappSalvando}
-                className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                {whatsappSalvando ? 'Salvando...' : 'Salvar modelos'}
-              </button>
             </div>
           </div>
 
@@ -13162,7 +13424,7 @@ const totalParticipantesDoDia = useMemo(() => {
                     const participantes = calcularParticipantes(resultado);
                     const pacoteDescricao = formatarPacote(resultado);
                     const valorFormatado = formatarValor(resultado.valor);
-                    const podeAbrirWhatsapp = Boolean(normalizarTelefoneWhatsapp(resultado.telefone));
+                    const podeEnviarEmail = Boolean((resultado.email || '').trim());
 
                     return (
                       <tr key={resultado.id} className="hover:bg-slate-50/80">
@@ -13177,11 +13439,11 @@ const totalParticipantesDoDia = useMemo(() => {
                             onClick={() =>
                               abrirEnvioWhatsapp(resultado, participantes, pacoteDescricao, valorFormatado)
                             }
-                            disabled={!podeAbrirWhatsapp}
+                            disabled={!podeEnviarEmail}
                             className="inline-flex items-center justify-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
                           >
-                            <FaWhatsapp className="h-3.5 w-3.5" />
-                            WhatsApp
+                            <FaEnvelope className="h-3.5 w-3.5" />
+                            Email
                           </button>
                         </td>
                       </tr>
