@@ -127,18 +127,76 @@ export async function enviarEmailConfirmacaoReserva(
   return { enviado: true };
 }
 
-export async function processarEmailsConfirmacaoPendentes() {
+type ProcessarPendentesOptions = {
+  /** Se true, ignora o filtro de data e processa qualquer reserva paga sem email enviado. Default: false */
+  incluirAntigas?: boolean;
+  /** Limite maximo de envios por execucao (defesa em profundidade). Default: 50 */
+  limite?: number;
+};
+
+const PROCESSAMENTO_LIMITE_PADRAO = 50;
+
+const obterDataReservaISO = (valor: unknown): string | null => {
+  if (!valor) return null;
+  if (typeof valor === "string") {
+    const match = /^(\d{4}-\d{2}-\d{2})/.exec(valor.trim());
+    return match ? match[1] : null;
+  }
+  if (valor instanceof Date) {
+    return valor.toISOString().slice(0, 10);
+  }
+  const maybeDate = (valor as { toDate?: () => Date }).toDate?.();
+  if (maybeDate instanceof Date) {
+    return maybeDate.toISOString().slice(0, 10);
+  }
+  return null;
+};
+
+export async function processarEmailsConfirmacaoPendentes(
+  options: ProcessarPendentesOptions = {},
+) {
   if (!isEmailConfirmacaoHabilitada()) {
     return {
       emailHabilitado: false,
       emailsEnviados: 0,
       emailsIgnorados: 0,
       falhas: 0,
+      candidatos: 0,
+      ignoradosPorData: 0,
     };
   }
 
+  const limite = Math.max(1, options.limite ?? PROCESSAMENTO_LIMITE_PADRAO);
+  const incluirAntigas = options.incluirAntigas === true;
+  const hojeISO = new Date().toISOString().slice(0, 10);
+
   const snapshot = await getDocs(
     query(collection(db, "reservas"), where("status", "==", "pago")),
+  );
+
+  // Separa quem realmente vai ser processado: pendente de email + data >= hoje (a menos que incluirAntigas)
+  type Candidato = { id: string; reserva: ReservaEmail };
+  const candidatos: Candidato[] = [];
+  let ignoradosPorData = 0;
+
+  for (const docSnap of snapshot.docs) {
+    const reserva = docSnap.data() as ReservaEmail;
+    if (reserva.emailEnviado === true) continue;
+
+    if (!incluirAntigas) {
+      const dataReserva = obterDataReservaISO(reserva.data);
+      if (!dataReserva || dataReserva < hojeISO) {
+        ignoradosPorData += 1;
+        continue;
+      }
+    }
+
+    candidatos.push({ id: docSnap.id, reserva });
+  }
+
+  const lote = candidatos.slice(0, limite);
+  console.log(
+    `[email] processamento manual: ${candidatos.length} candidato(s) (futuras), ${ignoradosPorData} ignorada(s) por data antiga, processando ${lote.length} (limite ${limite}).`,
   );
 
   let emailsEnviados = 0;
@@ -147,13 +205,12 @@ export async function processarEmailsConfirmacaoPendentes() {
   let interrompidoPorConexao = false;
   let erroGeral = "";
 
-  for (const docSnap of snapshot.docs) {
-    const reserva = docSnap.data() as ReservaEmail;
+  for (const { id, reserva } of lote) {
     try {
       const resultado = await enviarEmailConfirmacaoReserva(
-        docSnap.id,
+        id,
         reserva,
-        doc(db, "reservas", docSnap.id),
+        doc(db, "reservas", id),
       );
 
       if (resultado.enviado) {
@@ -164,11 +221,11 @@ export async function processarEmailsConfirmacaoPendentes() {
     } catch (error: any) {
       falhas += 1;
       const mensagemErro = error?.message || "Erro ao enviar email";
-      await updateDoc(doc(db, "reservas", docSnap.id), {
+      await updateDoc(doc(db, "reservas", id), {
         emailErro: mensagemErro,
         dataEmailErro: new Date(),
       }).catch(() => undefined);
-      console.error(`[email] erro ao enviar confirmacao ${docSnap.id}:`, error);
+      console.error(`[email] erro ao enviar confirmacao ${id}:`, error);
 
       if (isEmailConnectivityError(error)) {
         interrompidoPorConexao = true;
@@ -186,6 +243,8 @@ export async function processarEmailsConfirmacaoPendentes() {
     emailsEnviados,
     emailsIgnorados,
     falhas,
+    candidatos: candidatos.length,
+    ignoradosPorData,
     interrompidoPorConexao,
     erroGeral,
   };

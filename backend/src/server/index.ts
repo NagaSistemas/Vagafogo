@@ -75,9 +75,16 @@ app.post('/test-update-status/:reservaId', async (req, res) => {
 });
 
 // Endpoint para processar emails de confirmação
-app.post('/process-emails', async (_req, res) => {
+// Query params:
+//   ?incluir_antigas=true  -> processa reservas com data anterior a hoje (cuidado!)
+//   ?limite=N              -> limite de envios por execucao (default 50)
+app.post('/process-emails', async (req, res) => {
   try {
-    const resultado = await processarEmailsConfirmacaoPendentes();
+    const incluirAntigas = req.query?.incluir_antigas === 'true';
+    const limiteParam = Number(req.query?.limite ?? '');
+    const limite = Number.isFinite(limiteParam) && limiteParam > 0 ? limiteParam : undefined;
+
+    const resultado = await processarEmailsConfirmacaoPendentes({ incluirAntigas, limite });
     res.json({ success: true, ...resultado });
   } catch (error: any) {
     console.error('Erro ao processar emails:', error);
