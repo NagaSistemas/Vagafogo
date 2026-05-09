@@ -1,5 +1,7 @@
 import nodemailer from "nodemailer";
 import { doc, getDoc } from "firebase/firestore";
+import { existsSync, readFileSync } from "fs";
+import path from "path";
 import { db } from "./firebase";
 
 export type EmailConfirmacaoPayload = {
@@ -106,6 +108,14 @@ const EMAIL_TEMPLATE_PADRAO = [
   "Aguardamos voce no Vagafogo.",
 ].join("\n");
 
+const EMAIL_LAYOUT_FALLBACK = [
+  '<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">',
+  "{{contentHtml}}",
+  "</div>",
+].join("");
+
+let emailLayoutCache: string | null = null;
+
 let transporter: nodemailer.Transporter | null = null;
 let transporterVerified: Promise<void> | null = null;
 
@@ -211,6 +221,28 @@ export function isEmailConnectivityError(error: unknown) {
   return isRetryableEmailError(error);
 }
 
+export function isEmailRateLimitError(error: unknown) {
+  const code = (error as { code?: string })?.code;
+  const status = (error as { status?: number })?.status;
+  return code === "RESEND_RATE_LIMIT" || status === 429;
+}
+
+export function getEmailRateLimitScope(error: unknown): "daily" | "monthly" | "unknown" {
+  if (!isEmailRateLimitError(error)) return "unknown";
+
+  const message = String((error as { message?: string })?.message ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  if (message.includes("month") || message.includes("monthly") || message.includes("mensal")) {
+    return "monthly";
+  }
+  if (message.includes("day") || message.includes("daily") || message.includes("dia")) {
+    return "daily";
+  }
+  return "daily";
+}
+
 function isRetryableEmailError(error: unknown) {
   const code = (error as { code?: string })?.code;
   return code
@@ -257,6 +289,136 @@ function sanitize(value: string) {
 
 function textToHtml(value: string) {
   return sanitize(value).replace(/\n/g, "<br />");
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function replaceAllTokens(template: string, tokens: Record<string, string>) {
+  return Object.entries(tokens).reduce(
+    (html, [key, value]) =>
+      html.replace(new RegExp(`{{\\s*${escapeRegExp(key)}\\s*}}`, "g"), value),
+    template
+  );
+}
+
+function obterEmailLayout() {
+  if (emailLayoutCache) {
+    return emailLayoutCache;
+  }
+
+  const candidatePaths = [
+    path.resolve(__dirname, "../templates/email-confirmacao.html"),
+    path.resolve(process.cwd(), "dist/templates/email-confirmacao.html"),
+    path.resolve(process.cwd(), "src/templates/email-confirmacao.html"),
+  ];
+
+  const templatePath = candidatePaths.find((candidate) => existsSync(candidate));
+  if (!templatePath) {
+    emailLayoutCache = EMAIL_LAYOUT_FALLBACK;
+    return emailLayoutCache;
+  }
+
+  try {
+    emailLayoutCache = readFileSync(templatePath, "utf8");
+  } catch (error) {
+    console.warn("[email] Nao foi possivel carregar layout HTML:", error);
+    emailLayoutCache = EMAIL_LAYOUT_FALLBACK;
+  }
+
+  return emailLayoutCache;
+}
+
+function renderDetailRows(rows: Array<{ label: string; value: string }>) {
+  const linhas = rows
+    .map(
+      ({ label, value }) => `
+        <tr>
+          <td style="padding:9px 12px; border-bottom:1px solid #eadfce; color:#7a654d; font-size:13px; line-height:1.4; font-weight:700; width:42%;">
+            ${sanitize(label)}
+          </td>
+          <td style="padding:9px 12px; border-bottom:1px solid #eadfce; color:#24170d; font-size:14px; line-height:1.4;">
+            ${sanitize(value)}
+          </td>
+        </tr>
+      `
+    )
+    .join("");
+
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:14px 0 20px; background:#fffaf3; border:1px solid #eadfce; border-radius:14px; overflow:hidden;">
+      ${linhas}
+    </table>
+  `;
+}
+
+function renderParagraph(lines: string[]) {
+  const html = lines
+    .map((line) => sanitize(line))
+    .join("<br />");
+
+  return `<p style="margin:0 0 16px; font-size:15px; line-height:1.65; color:#2f2417;">${html}</p>`;
+}
+
+function renderEmailContentFromPanel(text: string) {
+  const blocks = text
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  if (blocks.length === 0) {
+    return "";
+  }
+
+  return blocks
+    .map((block) => {
+      const lines = block
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      const detailRows: Array<{ label: string; value: string }> = [];
+      const paragraphLines: string[] = [];
+
+      for (const line of lines) {
+        const detailMatch = /^\*\s*([^:]+):\s*(.*)$/.exec(line);
+        if (detailMatch) {
+          detailRows.push({
+            label: detailMatch[1].trim(),
+            value: detailMatch[2].trim(),
+          });
+          continue;
+        }
+
+        paragraphLines.push(line);
+      }
+
+      const rendered: string[] = [];
+      if (paragraphLines.length > 0) {
+        rendered.push(renderParagraph(paragraphLines));
+      }
+      if (detailRows.length > 0) {
+        rendered.push(renderDetailRows(detailRows));
+      }
+
+      return rendered.join("");
+    })
+    .join("");
+}
+
+function renderEmailLayout(params: {
+  subject: string;
+  contentHtml: string;
+  preheader: string;
+}) {
+  const layout = obterEmailLayout();
+  return replaceAllTokens(layout, {
+    subject: sanitize(params.subject),
+    preheader: sanitize(params.preheader),
+    contentHtml: params.contentHtml,
+    year: String(new Date().getFullYear()),
+  });
 }
 
 function formatarDataReserva(valor: string) {
@@ -325,19 +487,32 @@ function buildEmailHtml({
   participantes,
   valor,
 }: EmailConfirmacaoPayload) {
-  return `
-    <h2>Ola, ${sanitize(nome)}!</h2>
-    <p>Seu pagamento foi confirmado e sua reserva esta garantida.</p>
-    <p>
-      ${codigoReserva ? `<strong>Codigo da reserva:</strong> ${sanitize(codigoReserva)}<br />` : ""}
-      <strong>Atividade:</strong> ${sanitize(atividade)}<br />
-      <strong>Data:</strong> ${sanitize(formatarDataReserva(data))}<br />
-      <strong>Horario:</strong> ${sanitize(horario)}<br />
-      <strong>Participantes:</strong> ${participantes}<br />
-      <strong>Valor:</strong> ${sanitize(formatCurrency(valor))}
-    </p>
-    <p>Aguardamos voce.</p>
-  `;
+  const detalhes = [
+    codigoReserva ? `* Codigo da reserva: ${codigoReserva}` : "",
+    `* Atividade: ${atividade}`,
+    `* Data: ${formatarDataReserva(data)}`,
+    `* Horario: ${horario}`,
+    `* Participantes: ${participantes}`,
+    `* Valor: ${formatCurrency(valor)}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const text = [
+    `Ola, ${nome}!`,
+    "",
+    "Seu pagamento foi confirmado e sua reserva esta garantida.",
+    "",
+    detalhes,
+    "",
+    "Aguardamos voce no Vagafogo.",
+  ].join("\n");
+
+  return renderEmailLayout({
+    subject: EMAIL_SUBJECT_PADRAO,
+    contentHtml: renderEmailContentFromPanel(text),
+    preheader: "Sua reserva na Fazenda Vagafogo foi confirmada.",
+  });
 }
 
 async function buildEmailConfirmacao(payload: EmailConfirmacaoPayload) {
@@ -356,7 +531,11 @@ async function buildEmailConfirmacao(payload: EmailConfirmacaoPayload) {
   const text = aplicarTemplate(template, montarDadosEmail(payload));
   return {
     subject,
-    html: `<div style="font-family: Arial, sans-serif; line-height: 1.5; color: #1f2937;">${textToHtml(text)}</div>`,
+    html: renderEmailLayout({
+      subject,
+      contentHtml: renderEmailContentFromPanel(text),
+      preheader: text.replace(/\s+/g, " ").slice(0, 140),
+    }),
     text,
   };
 }

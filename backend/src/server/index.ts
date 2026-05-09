@@ -9,9 +9,11 @@ import {
   obterCamposRetencaoReservaNaAtualizacao,
 } from "../services/reservaRetention";
 import {
+  excluirEmailDaFila,
   enviarEmailManual,
   listarFilaEmailsConfirmacao,
   processarEmailsConfirmacaoPendentes,
+  tentarReenviarEmailConfirmacaoReserva,
 } from "../services/emailReservas";
 import {
   desconectarWhatsApp,
@@ -102,6 +104,50 @@ app.get('/emails/fila', async (req, res) => {
   } catch (error: any) {
     console.error('Erro ao carregar fila de emails:', error);
     res.status(500).json({ error: error?.message || 'Erro desconhecido' });
+  }
+});
+
+app.post('/emails/:reservaId/retry', async (req, res) => {
+  try {
+    const { reservaId } = req.params;
+    const resultado = await tentarReenviarEmailConfirmacaoReserva(reservaId);
+
+    if (resultado.enviado) {
+      res.json({ success: true, ...resultado });
+      return;
+    }
+
+    const status =
+      resultado.motivo === "RESERVA_NAO_ENCONTRADA"
+        ? 404
+        : resultado.motivo === "LIMITE_ATINGIDO"
+          ? 429
+          : 400;
+
+    res.status(status).json({ success: false, ...resultado });
+  } catch (error: any) {
+    console.error('Erro ao reenviar email:', error);
+    res.status(500).json({ success: false, error: error?.message || 'Erro desconhecido' });
+  }
+});
+
+app.post('/emails/:reservaId/excluir', async (req, res) => {
+  try {
+    const { reservaId } = req.params;
+    const resultado = await excluirEmailDaFila(reservaId);
+
+    if (resultado.excluido) {
+      res.json({ success: true, ...resultado });
+      return;
+    }
+
+    res.status(resultado.motivo === "RESERVA_NAO_ENCONTRADA" ? 404 : 400).json({
+      success: false,
+      ...resultado,
+    });
+  } catch (error: any) {
+    console.error('Erro ao excluir email da fila:', error);
+    res.status(500).json({ success: false, error: error?.message || 'Erro desconhecido' });
   }
 });
 
@@ -222,7 +268,7 @@ app.post('/test-webhook', (req, res) => {
 });
 
 const port = process.env.PORT || 3001;
-const WHATSAPP_AUTO_START = (process.env.WHATSAPP_AUTO_START ?? "true").toLowerCase() !== "false";
+const WHATSAPP_AUTO_START = (process.env.WHATSAPP_AUTO_START ?? "false").toLowerCase() === "true";
 
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);

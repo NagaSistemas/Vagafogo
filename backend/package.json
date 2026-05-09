@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "main": "dist/server/index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-email-templates.js",
     "dev": "ts-node-dev --prefer-ts-exts src/server/index.ts",
-    "start": "npm run build && node -r dotenv/config dist/server/index.js"
+    "start": "npm run build && node --max-old-space-size=512 -r dotenv/config dist/server/index.js"
   },
   "dependencies": {
     "@types/cors": "^2.8.19",

@@ -39,6 +39,13 @@ function safeJoin(baseDir, requestPath) {
 function serveFile(filePath, res) {
   const ext = path.extname(filePath).toLowerCase();
   const contentType = mimeTypes[ext] ?? "application/octet-stream";
+  const relativePath = path.relative(DIST_DIR, filePath).replace(/\\/g, "/");
+  const cacheControl =
+    ext === ".html"
+      ? "no-cache"
+      : relativePath.startsWith("assets/")
+        ? "public, max-age=31536000, immutable"
+        : "public, max-age=3600";
 
   fs.readFile(filePath, (err, content) => {
     if (err) {
@@ -46,7 +53,7 @@ function serveFile(filePath, res) {
       res.end("Erro interno do servidor");
       return;
     }
-    res.writeHead(200, { "Content-Type": contentType });
+    res.writeHead(200, { "Content-Type": contentType, "Cache-Control": cacheControl });
     res.end(content);
   });
 }
@@ -100,4 +107,3 @@ server.listen(PORT, () => {
   console.log(`[serve-dist] Servindo ${DIST_DIR}`);
   console.log(`[serve-dist] http://localhost:${PORT}`);
 });
-

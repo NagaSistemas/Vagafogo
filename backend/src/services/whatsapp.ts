@@ -170,6 +170,22 @@ const REMOTE_BACKUP_INTERVAL_MS = parseNumber(
   process.env.WHATSAPP_REMOTE_BACKUP_MS,
   60000 // 1 min
 );
+const WHATSAPP_IDLE_TIMEOUT_MS = parseNumber(
+  process.env.WHATSAPP_IDLE_TIMEOUT_MS,
+  15 * 60 * 1000
+);
+const WHATSAPP_QR_IDLE_TIMEOUT_MS = parseNumber(
+  process.env.WHATSAPP_QR_IDLE_TIMEOUT_MS,
+  5 * 60 * 1000
+);
+const WHATSAPP_STARTUP_TIMEOUT_MS = parseNumber(
+  process.env.WHATSAPP_STARTUP_TIMEOUT_MS,
+  90 * 1000
+);
+const WHATSAPP_SEND_READY_TIMEOUT_MS = parseNumber(
+  process.env.WHATSAPP_SEND_READY_TIMEOUT_MS,
+  45 * 1000
+);
 
 let firebaseStore: FirebaseStore | null = null;
 
@@ -191,6 +207,10 @@ let lastAuthStrategy: WhatsappStatusPayload["authStrategy"] = undefined;
 let initializing = false;
 let initRetries = 0;
 let retryTimer: NodeJS.Timeout | null = null;
+let idleTimer: NodeJS.Timeout | null = null;
+let qrIdleTimer: NodeJS.Timeout | null = null;
+let startupTimer: NodeJS.Timeout | null = null;
+let intentionalShutdownReason: string | null = null;
 
 const limparSessaoWhatsapp = async () => {
   try {
@@ -205,6 +225,88 @@ const clearRetryTimer = () => {
     clearTimeout(retryTimer);
     retryTimer = null;
   }
+};
+
+const clearIdleTimer = () => {
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+};
+
+const clearQrIdleTimer = () => {
+  if (qrIdleTimer) {
+    clearTimeout(qrIdleTimer);
+    qrIdleTimer = null;
+  }
+};
+
+const clearStartupTimer = () => {
+  if (startupTimer) {
+    clearTimeout(startupTimer);
+    startupTimer = null;
+  }
+};
+
+const clearLifecycleTimers = () => {
+  clearIdleTimer();
+  clearQrIdleTimer();
+  clearStartupTimer();
+};
+
+const encerrarRuntimeSemLogout = async (reason: string) => {
+  clearRetryTimer();
+  clearLifecycleTimers();
+  intentionalShutdownReason = reason;
+
+  const clienteAtual = client;
+  client = null;
+  initializing = false;
+  status = "idle";
+  qrDataUrl = null;
+  lastInfo = null;
+  lastError = reason;
+
+  try {
+    await clienteAtual?.destroy();
+  } catch (error) {
+    console.warn("[whatsapp] Falha ao encerrar runtime:", error);
+  }
+
+  setTimeout(() => {
+    if (intentionalShutdownReason === reason) {
+      intentionalShutdownReason = null;
+    }
+  }, 1000);
+};
+
+const scheduleIdleShutdown = () => {
+  clearIdleTimer();
+  if (WHATSAPP_IDLE_TIMEOUT_MS <= 0 || !client || status !== "ready") return;
+
+  idleTimer = setTimeout(() => {
+    void encerrarRuntimeSemLogout("desligado_por_inatividade");
+  }, WHATSAPP_IDLE_TIMEOUT_MS);
+};
+
+const scheduleQrShutdown = () => {
+  clearQrIdleTimer();
+  if (WHATSAPP_QR_IDLE_TIMEOUT_MS <= 0 || !client || status !== "qr") return;
+
+  qrIdleTimer = setTimeout(() => {
+    void encerrarRuntimeSemLogout("qr_expirado_por_inatividade");
+  }, WHATSAPP_QR_IDLE_TIMEOUT_MS);
+};
+
+const scheduleStartupTimeout = () => {
+  clearStartupTimer();
+  if (WHATSAPP_STARTUP_TIMEOUT_MS <= 0) return;
+
+  startupTimer = setTimeout(() => {
+    if (status === "initializing") {
+      void encerrarRuntimeSemLogout("startup_timeout");
+    }
+  }, WHATSAPP_STARTUP_TIMEOUT_MS);
 };
 
 const scheduleRetry = (reason?: string | null) => {
@@ -222,6 +324,7 @@ const scheduleRetry = (reason?: string | null) => {
 };
 
 const handleInitFailure = (error?: unknown) => {
+  clearLifecycleTimers();
   status = "disconnected";
   initializing = false;
   lastError = (error as { message?: string })?.message || "init_error";
@@ -232,6 +335,22 @@ const handleInitFailure = (error?: unknown) => {
   }
   client = null;
   scheduleRetry(lastError);
+};
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const aguardarWhatsAppPronto = async (timeoutMs: number) => {
+  if (client && status === "ready") return true;
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (client && status === "ready") return true;
+    if (status === "qr" || status === "auth_failure") return false;
+    if (!client && !initializing) return false;
+    await sleep(500);
+  }
+
+  return Boolean(client && status === "ready");
 };
 
 class WhatsappIndisponivelError extends Error {
@@ -378,7 +497,9 @@ export function iniciarWhatsApp(): void {
 
   const executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
 
+  intentionalShutdownReason = null;
   clearRetryTimer();
+  clearLifecycleTimers();
   initializing = true;
   status = "initializing";
   lastError = null;
@@ -408,25 +529,50 @@ export function iniciarWhatsApp(): void {
     deviceName: WHATSAPP_DEVICE_NAME,
     browserName: WHATSAPP_BROWSER_NAME,
     puppeteer: {
-      args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--no-zygote",
+        "--disable-gpu",
+        "--disable-software-rasterizer",
+        "--disable-webgl",
+        "--disable-accelerated-2d-canvas",
+        "--disable-extensions",
+        "--disable-background-networking",
+        "--disable-sync",
+        "--metrics-recording-only",
+        "--mute-audio",
+        "--no-first-run",
+        "--js-flags=--max-old-space-size=256",
+      ],
       ...(executablePath ? { executablePath } : {}),
     },
   });
 
   registrarHandlersClient();
+  scheduleStartupTimeout();
 
-  client.initialize().catch((error: any) => {
+  const initializingClient = client;
+  initializingClient.initialize().catch((error: any) => {
+    if (client !== initializingClient) return;
     console.error("[whatsapp] Falha ao inicializar:", error);
     handleInitFailure(error);
   });
 }
 
 function registrarHandlersClient(): void {
-  if (!client) return;
+  const registeredClient = client;
+  if (!registeredClient) return;
 
-  client.on("qr", async (qr) => {
+  registeredClient.on("qr", async (qr) => {
+    if (client !== registeredClient) return;
     status = "qr";
     lastQrAt = Date.now();
+    initializing = false;
+    clearStartupTimer();
+    scheduleQrShutdown();
     try {
       qrDataUrl = await qrcode.toDataURL(qr);
     } catch (error: any) {
@@ -434,35 +580,43 @@ function registrarHandlersClient(): void {
     }
   });
 
-  client.on("ready", () => {
+  registeredClient.on("ready", () => {
+    if (client !== registeredClient) return;
     status = "ready";
     initializing = false;
     initRetries = 0;
+    clearStartupTimer();
+    clearQrIdleTimer();
     qrDataUrl = null;
     lastError = null;
     lastInfo = {
-      wid: client?.info?.wid?._serialized,
-      pushname: client?.info?.pushname,
+      wid: registeredClient.info?.wid?._serialized,
+      pushname: registeredClient.info?.pushname,
     };
+    scheduleIdleShutdown();
   });
 
-  client.on("authenticated", () => {
+  registeredClient.on("authenticated", () => {
+    if (client !== registeredClient) return;
     status = "initializing";
     initializing = false;
+    clearQrIdleTimer();
+    scheduleStartupTimeout();
     lastError = null;
   });
 
-  client.on("auth_failure", (msg) => {
+  registeredClient.on("auth_failure", (msg) => {
+    if (client !== registeredClient) return;
+    clearLifecycleTimers();
     status = "auth_failure";
     initializing = false;
     qrDataUrl = null;
     lastInfo = null;
     lastError = msg?.toString() || "auth_failure";
-    const clienteAtual = client;
     client = null;
     void (async () => {
       try {
-        await clienteAtual?.destroy();
+        await registeredClient.destroy();
       } catch {
         // noop
       }
@@ -471,7 +625,19 @@ function registrarHandlersClient(): void {
     })();
   });
 
-  client.on("disconnected", (reason) => {
+  registeredClient.on("disconnected", (reason) => {
+    if (client !== registeredClient && !intentionalShutdownReason) return;
+    if (intentionalShutdownReason) {
+      status = "idle";
+      initializing = false;
+      lastError = intentionalShutdownReason;
+      qrDataUrl = null;
+      lastInfo = null;
+      client = null;
+      return;
+    }
+
+    clearLifecycleTimers();
     status = "disconnected";
     initializing = false;
     const reasonText = reason?.toString() || "disconnected";
@@ -484,13 +650,14 @@ function registrarHandlersClient(): void {
     }
   });
 
-  client.on("remote_session_saved" as any, () => {
+  registeredClient.on("remote_session_saved" as any, () => {
     console.log("[whatsapp] Sessao sincronizada com Firebase Storage");
   });
 }
 
 export async function desconectarWhatsApp(): Promise<void> {
   clearRetryTimer();
+  clearLifecycleTimers();
   initRetries = 0;
   const clienteAtual = client;
   client = null;
@@ -595,6 +762,7 @@ export async function enviarBoasVindasWhatsapp(
   configOverride?: WhatsappConfig
 ): Promise<ResultadoEnvio> {
   iniciarWhatsApp();
+  clearIdleTimer();
 
   const config = configOverride ?? (await obterConfig());
 
@@ -608,7 +776,9 @@ export async function enviarBoasVindasWhatsapp(
     return { enviado: false, motivo: "mensagem_vazia" };
   }
 
-  if (!client || status !== "ready") {
+  const pronto = await aguardarWhatsAppPronto(WHATSAPP_SEND_READY_TIMEOUT_MS);
+  if (!pronto || !client || status !== "ready") {
+    scheduleIdleShutdown();
     return { enviado: false, motivo: "whatsapp_nao_conectado" };
   }
 
@@ -632,8 +802,11 @@ export async function enviarBoasVindasWhatsapp(
   try {
     await client.sendMessage(whatsappId, mensagem, { sendSeen: false });
   } catch (error: any) {
+    scheduleIdleShutdown();
     return { enviado: false, motivo: error?.message || "erro_envio" };
   }
+
+  scheduleIdleShutdown();
 
   return {
     enviado: true,

@@ -74,6 +74,19 @@ const formatCurrencyForEditing = (valor: number) => {
   }).format(valor);
 };
 
+const criarEmailUsoEscopo = (enviados = 0, limite = 0): EmailUsoEscopo => {
+  const enviadosNormalizados = Number.isFinite(enviados) ? Math.max(Math.floor(enviados), 0) : 0;
+  const limiteNormalizado = Number.isFinite(limite) ? Math.max(Math.floor(limite), 0) : 0;
+  return {
+    enviados: enviadosNormalizados,
+    limite: limiteNormalizado,
+    restantes: Math.max(limiteNormalizado - enviadosNormalizados, 0),
+    percentual: limiteNormalizado > 0
+      ? Math.min(Math.round((enviadosNormalizados / limiteNormalizado) * 100), 100)
+      : 0,
+  };
+};
+
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'https://vagafogo-production.up.railway.app';
 
 const emailTemplateConfirmacaoPadrao =
@@ -457,7 +470,7 @@ type WhatsappEnvioModal = {
 
 type EmailFilaItem = {
   id: string;
-  statusEmail: 'enviado' | 'pendente' | 'erro' | 'sem_email';
+  statusEmail: 'enviado' | 'pendente' | 'erro';
   nome: string;
   email: string;
   telefone?: string;
@@ -471,6 +484,13 @@ type EmailFilaItem = {
   criadoEm?: string;
 };
 
+type EmailUsoEscopo = {
+  enviados: number;
+  limite: number;
+  restantes: number;
+  percentual: number;
+};
+
 type EmailFilaResumo = {
   emailHabilitado: boolean;
   totalReservasPagas: number;
@@ -478,6 +498,15 @@ type EmailFilaResumo = {
   pendentes: number;
   erros: number;
   semEmail: number;
+  uso: {
+    diario: EmailUsoEscopo;
+    mensal: EmailUsoEscopo;
+    referencia?: {
+      hoje?: string;
+      mes?: string;
+      timezone?: string;
+    };
+  };
   itens: EmailFilaItem[];
 };
 
@@ -1317,6 +1346,8 @@ export default function AdminDashboard() {
   useEffect(() => {
     const audio = new Audio('/notificacao.mp3');
     audio.preload = 'auto';
+    audio.loop = false;
+    audio.volume = 1;
     notificacaoAudioRef.current = audio;
 
     const unlock = () => {
@@ -1464,6 +1495,7 @@ export default function AdminDashboard() {
      if (!audio) return;
 
      audio.onended = null;
+     audio.loop = false;
 
      try {
 
@@ -1483,8 +1515,6 @@ export default function AdminDashboard() {
 
      notificacaoAudioTokenRef.current += 1;
 
-     const token = notificacaoAudioTokenRef.current;
-
      if (!notificacaoAudioRef.current) {
 
        notificacaoAudioRef.current = new Audio('/notificacao.mp3');
@@ -1494,6 +1524,8 @@ export default function AdminDashboard() {
      const audio = notificacaoAudioRef.current;
 
      audio.onended = null;
+     audio.loop = true;
+     audio.volume = 1;
 
      try {
 
@@ -1518,26 +1550,6 @@ export default function AdminDashboard() {
        return;
 
      }
-
-     audio.onended = async () => {
-
-       if (notificacaoAudioTokenRef.current !== token) return;
-
-       audio.onended = null;
-
-       try {
-
-         audio.currentTime = 0;
-
-         await audio.play();
-
-       } catch {
-
-         // noop
-
-       }
-
-     };
 
    }, []);
 
@@ -1712,11 +1724,7 @@ export default function AdminDashboard() {
 
   });
 
-  const [whatsappCarregando, setWhatsappCarregando] = useState(false);
-
   const [whatsappSalvando, setWhatsappSalvando] = useState(false);
-
-  const [emailUltimoProcessamento, setEmailUltimoProcessamento] = useState<string | null>(null);
 
   const [emailFila, setEmailFila] = useState<EmailFilaResumo>({
     emailHabilitado: false,
@@ -1725,12 +1733,21 @@ export default function AdminDashboard() {
     pendentes: 0,
     erros: 0,
     semEmail: 0,
+    uso: {
+      diario: criarEmailUsoEscopo(0, 100),
+      mensal: criarEmailUsoEscopo(0, 3000),
+    },
     itens: [],
   });
 
   const [emailFilaCarregando, setEmailFilaCarregando] = useState(false);
 
-  const [emailRegistroFiltro, setEmailRegistroFiltro] = useState<'todos' | 'erro' | 'pendente' | 'enviado' | 'sem_email'>('todos');
+  const [emailAcaoCarregando, setEmailAcaoCarregando] = useState<{
+    id: string;
+    acao: 'retry' | 'excluir';
+  } | null>(null);
+
+  const [emailRegistroFiltro, setEmailRegistroFiltro] = useState<'todos' | 'erro' | 'pendente' | 'enviado'>('todos');
 
   // Dashboard
   const [dashboardInicio, setDashboardInicio] = useState(() => dayjs().subtract(30, 'day').format('YYYY-MM-DD'));
@@ -3156,6 +3173,13 @@ const totalParticipantesDoDia = useMemo(() => {
           tone: 'slate' as const,
         };
       default:
+        if (whatsappStatus.lastError === 'desligado_por_inatividade') {
+          return {
+            label: 'Em espera',
+            hint: 'Desligado automaticamente para economizar Railway; religa no proximo disparo',
+            tone: 'slate' as const,
+          };
+        }
         return {
           label: 'Nao iniciado',
           hint: 'Aguardando inicializacao do servidor ou clique para conectar',
@@ -4548,10 +4572,6 @@ const totalParticipantesDoDia = useMemo(() => {
         });
       }
 
-      if (['confirmado', 'pago'].includes(statusAtualNormalizado)) {
-        void processarEmailsPendentes();
-      }
-
       setModalReserva(false);
       setEditReserva(null);
       setReservaOriginalEmEdicao(null);
@@ -4675,8 +4695,6 @@ const totalParticipantesDoDia = useMemo(() => {
 
   const fetchWhatsappConfig = useCallback(async () => {
 
-    setWhatsappCarregando(true);
-
     try {
 
       const emailRef = doc(db, 'configuracoes', 'email');
@@ -4730,8 +4748,6 @@ const totalParticipantesDoDia = useMemo(() => {
           modelosMensagemManual,
         });
 
-      setEmailUltimoProcessamento(null);
-
     } catch (error) {
 
       console.error('Erro ao carregar configuracoes de email:', error);
@@ -4744,10 +4760,6 @@ const totalParticipantesDoDia = useMemo(() => {
         mensagemBoasVindas: whatsappTemplateBoasVindasPadrao,
         modelosMensagemManual: [],
       });
-
-    } finally {
-
-      setWhatsappCarregando(false);
 
     }
 
@@ -4907,6 +4919,17 @@ const totalParticipantesDoDia = useMemo(() => {
         pendentes: Number(data?.pendentes ?? 0),
         erros: Number(data?.erros ?? 0),
         semEmail: Number(data?.semEmail ?? 0),
+        uso: {
+          diario: criarEmailUsoEscopo(
+            Number(data?.uso?.diario?.enviados ?? 0),
+            Number(data?.uso?.diario?.limite ?? 100),
+          ),
+          mensal: criarEmailUsoEscopo(
+            Number(data?.uso?.mensal?.enviados ?? 0),
+            Number(data?.uso?.mensal?.limite ?? 3000),
+          ),
+          referencia: data?.uso?.referencia,
+        },
         itens: Array.isArray(data?.itens) ? data.itens : [],
       });
     } catch (error: any) {
@@ -4917,38 +4940,59 @@ const totalParticipantesDoDia = useMemo(() => {
     }
   }, []);
 
-  const processarEmailsPendentes = async () => {
+  const emailTemLimiteDisponivel =
+    emailFila.uso.diario.restantes > 0 && emailFila.uso.mensal.restantes > 0;
+
+  const tentarReenviarEmail = async (item: EmailFilaItem) => {
     try {
-      setWhatsappCarregando(true);
-      const response = await fetch(`${API_BASE}/process-emails`, { method: 'POST' });
+      setEmailAcaoCarregando({ id: item.id, acao: 'retry' });
+      const response = await fetch(`${API_BASE}/emails/${item.id}/retry`, { method: 'POST' });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data?.error || `Status ${response.status}`);
-      }
-      const enviados = Number(data?.emailsEnviados ?? 0);
-      const falhas = Number(data?.falhas ?? 0);
-      setEmailUltimoProcessamento(`${enviados} enviado(s), ${falhas} falha(s)`);
-      if (data?.interrompidoPorConexao) {
-        setFeedback({
-          type: 'error',
-          message:
-            data?.erroGeral ||
-            'Processamento interrompido: a conexão SMTP não respondeu. Verifique as variáveis e o plano da Railway.',
-        });
-        void carregarFilaEmails();
-        return;
+
+      if (!response.ok || data?.success === false) {
+        const motivo = data?.motivo;
+        const mensagem =
+          motivo === 'LIMITE_ATINGIDO'
+            ? 'Limite de envio atingido. Aguarde liberar cota antes de tentar novamente.'
+            : motivo === 'EMAIL_AUSENTE'
+              ? 'Esta reserva nao possui email cadastrado.'
+              : motivo === 'JA_ENVIADO'
+                ? 'Este email ja foi enviado.'
+                : data?.error || `Status ${response.status}`;
+        throw new Error(mensagem);
       }
 
-      setFeedback({
-        type: 'success',
-        message: `Processamento concluído: ${enviados} email(s) enviado(s).`,
-      });
-      void carregarFilaEmails();
+      setFeedback({ type: 'success', message: 'Email reenviado com sucesso.' });
+      await carregarFilaEmails();
     } catch (error: any) {
-      console.error('Erro ao processar emails pendentes:', error);
-      setFeedback({ type: 'error', message: error?.message || 'Erro ao processar emails.' });
+      console.error('Erro ao reenviar email:', error);
+      setFeedback({ type: 'error', message: error?.message || 'Erro ao reenviar email.' });
+      await carregarFilaEmails();
     } finally {
-      setWhatsappCarregando(false);
+      setEmailAcaoCarregando(null);
+    }
+  };
+
+  const excluirEmailDaFila = async (item: EmailFilaItem) => {
+    const confirmar = window.confirm(`Excluir ${item.nome || 'cliente'} da fila de email?`);
+    if (!confirmar) return;
+
+    try {
+      setEmailAcaoCarregando({ id: item.id, acao: 'excluir' });
+      const response = await fetch(`${API_BASE}/emails/${item.id}/excluir`, { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.error || data?.motivo || `Status ${response.status}`);
+      }
+
+      setFeedback({ type: 'success', message: 'Email removido da fila.' });
+      await carregarFilaEmails();
+    } catch (error: any) {
+      console.error('Erro ao excluir email da fila:', error);
+      setFeedback({ type: 'error', message: error?.message || 'Erro ao excluir email da fila.' });
+    } finally {
+      setEmailAcaoCarregando(null);
     }
   };
 
@@ -4989,6 +5033,7 @@ const totalParticipantesDoDia = useMemo(() => {
         qr: data?.qr ?? null,
         lastError: data?.lastError ?? null,
         lastQrAt: data?.lastQrAt ?? null,
+        authStrategy: data?.authStrategy === 'remote' ? 'remote' : data?.authStrategy === 'local' ? 'local' : undefined,
         info: data?.info,
       });
       setFeedback({ type: 'success', message: 'Conexao do Disparador Agradecimento iniciada.' });
@@ -5013,6 +5058,7 @@ const totalParticipantesDoDia = useMemo(() => {
         qr: data?.qr ?? null,
         lastError: data?.lastError ?? null,
         lastQrAt: data?.lastQrAt ?? null,
+        authStrategy: data?.authStrategy === 'remote' ? 'remote' : data?.authStrategy === 'local' ? 'local' : undefined,
         info: data?.info,
       });
       setFeedback({ type: 'success', message: 'Disparador Agradecimento desconectado.' });
@@ -13154,16 +13200,9 @@ const totalParticipantesDoDia = useMemo(() => {
 
           <AdminTabHeader
             title="Email"
-            description={'Acompanhe o envio de confirmacoes por email e reprocesse reservas pagas que ainda nao receberam confirmacao.'}
+            description={'Acompanhe emails pendentes, enviados e com erro, com reenvio manual dentro do limite disponivel.'}
             icon={FaEnvelope}
             actions={[
-              {
-                label: 'Processar pendentes',
-                icon: FaPaperPlane,
-                onClick: processarEmailsPendentes,
-                variant: 'primary',
-                disabled: whatsappCarregando,
-              },
               {
                 label: 'Atualizar fila',
                 icon: FaSyncAlt,
@@ -13184,6 +13223,20 @@ const totalParticipantesDoDia = useMemo(() => {
                 hint: 'Disparo quando o pagamento e confirmado',
                 icon: FaEnvelope,
                 tone: whatsappConfig.ativo ? 'emerald' : 'slate',
+              },
+              {
+                label: 'Enviados hoje',
+                value: `${emailFila.uso.diario.enviados}/${emailFila.uso.diario.limite}`,
+                hint: `${emailFila.uso.diario.restantes.toLocaleString('pt-BR')} restante(s) no limite diario`,
+                icon: FaPaperPlane,
+                tone: emailFila.uso.diario.restantes > 0 ? 'sky' : 'amber',
+              },
+              {
+                label: 'Enviados no mes',
+                value: `${emailFila.uso.mensal.enviados}/${emailFila.uso.mensal.limite}`,
+                hint: `${emailFila.uso.mensal.restantes.toLocaleString('pt-BR')} restante(s) no limite mensal`,
+                icon: FaChartBar,
+                tone: emailFila.uso.mensal.restantes > 0 ? 'emerald' : 'amber',
               },
               {
                 label: 'Corpo do email',
@@ -13212,13 +13265,6 @@ const totalParticipantesDoDia = useMemo(() => {
                 hint: 'Linha de assunto da confirmacao',
                 icon: FaEnvelope,
                 tone: whatsappConfig.assuntoConfirmacaoEmail.trim() ? 'emerald' : 'amber',
-              },
-              {
-                label: 'Ultimo processamento',
-                value: emailUltimoProcessamento ?? 'Ainda nao executado',
-                hint: 'Retorno da ultima varredura de pendencias',
-                icon: FaCheck,
-                tone: emailUltimoProcessamento ? 'emerald' : 'slate',
               },
             ]}
           />
@@ -13252,32 +13298,94 @@ const totalParticipantesDoDia = useMemo(() => {
                   </p>
                 </div>
 
+                <div className="rounded-xl border border-slate-200 bg-white px-4 py-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Uso do limite de envio</p>
+                      <p className="mt-1 text-sm text-slate-500">
+                        Acompanhamento calculado pelos emails confirmados no sistema.
+                      </p>
+                    </div>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+                      {emailFila.uso.referencia?.timezone ?? 'America/Sao_Paulo'}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {[
+                      {
+                        label: 'Diario',
+                        enviados: emailFila.uso.diario.enviados,
+                        limite: emailFila.uso.diario.limite,
+                        restantes: emailFila.uso.diario.restantes,
+                        percentual: emailFila.uso.diario.percentual,
+                        detalhe: emailFila.uso.referencia?.hoje
+                          ? dayjs(emailFila.uso.referencia.hoje).format('DD/MM/YYYY')
+                          : 'Hoje',
+                        tone: emailFila.uso.diario.restantes > 0 ? 'emerald' : 'amber',
+                      },
+                      {
+                        label: 'Mensal',
+                        enviados: emailFila.uso.mensal.enviados,
+                        limite: emailFila.uso.mensal.limite,
+                        restantes: emailFila.uso.mensal.restantes,
+                        percentual: emailFila.uso.mensal.percentual,
+                        detalhe: emailFila.uso.referencia?.mes
+                          ? dayjs(`${emailFila.uso.referencia.mes}-01`).format('MMMM/YYYY')
+                          : 'Mes atual',
+                        tone: emailFila.uso.mensal.restantes > 0 ? 'emerald' : 'amber',
+                      },
+                    ].map((item) => (
+                      <div key={item.label} className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-semibold uppercase text-slate-500">{item.label}</p>
+                            <p className="mt-1 text-lg font-semibold text-slate-900">
+                              {item.enviados.toLocaleString('pt-BR')} / {item.limite.toLocaleString('pt-BR')}
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                              item.tone === 'emerald'
+                                ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                                : 'border-amber-200 bg-amber-50 text-amber-700'
+                            }`}
+                          >
+                            {item.restantes.toLocaleString('pt-BR')} restantes
+                          </span>
+                        </div>
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                          <div
+                            className={`h-full rounded-full ${
+                              item.tone === 'emerald' ? 'bg-emerald-500' : 'bg-amber-500'
+                            }`}
+                            style={{ width: `${item.percentual}%` }}
+                          />
+                        </div>
+                        <p className="mt-2 text-xs text-slate-500">
+                          {item.percentual}% usado - {item.detalhe}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
                     <p className="text-xs font-semibold uppercase text-amber-700">Pendentes</p>
                     <p className="mt-1 text-2xl font-semibold text-slate-900">{emailFila.pendentes}</p>
                   </div>
+                  <div className="rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase text-emerald-700">Enviados</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900">{emailFila.enviados}</p>
+                  </div>
                   <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
                     <p className="text-xs font-semibold uppercase text-rose-700">Com erro</p>
                     <p className="mt-1 text-2xl font-semibold text-slate-900">{emailFila.erros}</p>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
-                    <p className="text-xs font-semibold uppercase text-slate-500">Sem email</p>
-                    <p className="mt-1 text-2xl font-semibold text-slate-900">{emailFila.semEmail}</p>
-                  </div>
                 </div>
 
                 <div className="flex flex-col gap-2 sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={processarEmailsPendentes}
-                    disabled={whatsappCarregando}
-                    className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                  >
-                    <FaPaperPlane className="h-4 w-4" />
-                    {whatsappCarregando ? 'Processando...' : 'Processar emails pendentes'}
-                  </button>
-
                   <button
                     type="button"
                     onClick={carregarFilaEmails}
@@ -13372,17 +13480,16 @@ const totalParticipantesDoDia = useMemo(() => {
               <div>
                 <h3 className="text-lg font-semibold text-slate-900">Registro de emails</h3>
                 <p className="text-sm text-slate-500">
-                  Histórico de emails enviados, pendentes, sem endereço e com falha no envio.
+                  Emails pendentes, enviados e com falha no envio.
                 </p>
               </div>
 
               <div className="flex flex-wrap gap-2">
                 {[
                   { id: 'todos', label: `Todos (${emailFila.itens.length})` },
-                  { id: 'erro', label: `Erros (${emailFila.erros})` },
                   { id: 'pendente', label: `Pendentes (${emailFila.pendentes})` },
                   { id: 'enviado', label: `Enviados (${emailFila.enviados})` },
-                  { id: 'sem_email', label: `Sem email (${emailFila.semEmail})` },
+                  { id: 'erro', label: `Erros (${emailFila.erros})` },
                 ].map((filtro) => (
                   <button
                     key={filtro.id}
@@ -13415,17 +13522,13 @@ const totalParticipantesDoDia = useMemo(() => {
                     item.statusEmail === 'enviado'
                       ? 'Enviado'
                       : item.statusEmail === 'erro'
-                      ? 'Erro'
-                      : item.statusEmail === 'sem_email'
-                        ? 'Sem email'
+                        ? 'Erro'
                         : 'Pendente';
                   const statusClassName =
                     item.statusEmail === 'enviado'
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                       : item.statusEmail === 'erro'
-                      ? 'border-rose-200 bg-rose-50 text-rose-700'
-                      : item.statusEmail === 'sem_email'
-                        ? 'border-slate-200 bg-slate-50 text-slate-600'
+                        ? 'border-rose-200 bg-rose-50 text-rose-700'
                         : 'border-amber-200 bg-amber-50 text-amber-700';
                   const dataEvento =
                     item.statusEmail === 'enviado'
@@ -13481,6 +13584,36 @@ const totalParticipantesDoDia = useMemo(() => {
                           <p className="font-semibold text-slate-900">{formatCurrency(Number(item.valor ?? 0))}</p>
                           <p className="mt-1">{statusLabel}</p>
                           <p className="mt-1 text-xs text-slate-400">Reserva {item.id}</p>
+                          {item.statusEmail !== 'enviado' ? (
+                            <div className="mt-3 flex flex-wrap justify-start gap-2 lg:justify-end">
+                              <button
+                                type="button"
+                                onClick={() => tentarReenviarEmail(item)}
+                                disabled={
+                                  !emailTemLimiteDisponivel ||
+                                  (emailAcaoCarregando?.id === item.id && emailAcaoCarregando.acao === 'retry')
+                                }
+                                title={!emailTemLimiteDisponivel ? 'Limite de envio indisponivel' : undefined}
+                                className="inline-flex items-center justify-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                <FaPaperPlane className="h-3.5 w-3.5" />
+                                {emailAcaoCarregando?.id === item.id && emailAcaoCarregando.acao === 'retry'
+                                  ? 'Tentando...'
+                                  : 'Tentar novamente'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => excluirEmailDaFila(item)}
+                                disabled={emailAcaoCarregando?.id === item.id}
+                                className="inline-flex items-center justify-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-45"
+                              >
+                                <FaTrash className="h-3.5 w-3.5" />
+                                {emailAcaoCarregando?.id === item.id && emailAcaoCarregando.acao === 'excluir'
+                                  ? 'Excluindo...'
+                                  : 'Excluir'}
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     </div>
