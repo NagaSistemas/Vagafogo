@@ -4,6 +4,7 @@ import laticImg2 from '../assets/brunch/laticinios/brunch-2.jpg'
 import laticImg3 from '../assets/brunch/laticinios/brunch-3.jpg'
 import { Link } from "react-router-dom"
 import { useReveal } from "../hooks/useReveal"
+import { useConfigSite } from "../hooks/useConfigSite"
 
 const cards = [
   {
@@ -25,6 +26,7 @@ const cards = [
 
 export function BrunchSection() {
   const { ref, revealed } = useReveal<HTMLDivElement>();
+  const { config } = useConfigSite();
 
   return (
     <section
@@ -100,10 +102,12 @@ export function BrunchSection() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
           </Link>
-          <p className="text-gray-400 text-sm mt-4 flex items-center justify-center gap-2">
-            <span className="inline-block h-1 w-1 rounded-full bg-[#E0B13C]" />
-            Sábados e Domingos · 9h às 14h · Vagas limitadas
-          </p>
+          {config.textoFuncionamento && (
+            <p className="text-gray-400 text-sm mt-4 flex items-center justify-center gap-2">
+              <span className="inline-block h-1 w-1 rounded-full bg-[#E0B13C]" />
+              {config.textoFuncionamento}
+            </p>
+          )}
         </div>
       </div>
     </section>

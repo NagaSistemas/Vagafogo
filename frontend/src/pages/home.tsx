@@ -5,13 +5,15 @@ import { BrunchSection } from "../components/BrunchSection.tsx"
 import { TrailSection } from "../components/TrailSection.tsx"
 import { EducationSection } from "../components/EducationSection.tsx"
 import { Footer } from "../components/Footer.tsx"
+import { FloatingButtons } from "../components/FloatingButtons.tsx"
 import { Link } from "react-router-dom"
 
 export function Home() {
   return (
     <>
       <Header />
-      <main className="mt-[60px]">
+      <FloatingButtons />
+      <main>
         <HeroSection />
         <FeatureSection />
         <BrunchSection />

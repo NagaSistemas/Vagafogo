@@ -28,7 +28,7 @@ import dayjs from 'dayjs';
 
 import 'dayjs/locale/pt-br';
 
-import { FaChevronLeft, FaChevronRight, FaChevronDown, FaChevronUp, FaTrash, FaEdit, FaPlus, FaSearch, FaCalendarAlt, FaUsers, FaLayerGroup, FaQuestionCircle, FaCheck, FaCreditCard, FaChair, FaEllipsisV, FaChartBar, FaFilePdf, FaEye, FaEyeSlash, FaSun, FaMoon, FaColumns, FaGripLines, FaUserCircle, FaUser, FaGraduationCap, FaPhoneAlt, FaIdCard, FaPaw, FaMoneyBillWave, FaClock, FaClipboardList, FaListUl, FaEnvelope, FaPaperPlane, FaWhatsapp, FaQrcode, FaSyncAlt, FaSignOutAlt } from 'react-icons/fa';
+import { FaChevronLeft, FaChevronRight, FaChevronDown, FaChevronUp, FaTrash, FaEdit, FaPlus, FaSearch, FaCalendarAlt, FaUsers, FaLayerGroup, FaQuestionCircle, FaCheck, FaCreditCard, FaChair, FaEllipsisV, FaChartBar, FaFilePdf, FaEye, FaEyeSlash, FaSun, FaMoon, FaColumns, FaGripLines, FaUserCircle, FaUser, FaGraduationCap, FaPhoneAlt, FaIdCard, FaPaw, FaMoneyBillWave, FaClock, FaClipboardList, FaListUl, FaEnvelope, FaPaperPlane, FaWhatsapp, FaQrcode, FaSyncAlt, FaSignOutAlt, FaCog } from 'react-icons/fa';
 import logo from '../assets/logo.jpg';
 import './AdminDashboardTheme.css';
 
@@ -352,7 +352,8 @@ type AdminAba =
   | 'pesquisa'
   | 'tipos_clientes'
   | 'email'
-  | 'whatsapp';
+  | 'whatsapp'
+  | 'configuracoes';
 
 type WhatsappConnectionStatus = 'idle' | 'initializing' | 'qr' | 'ready' | 'auth_failure' | 'disconnected';
 
@@ -1710,6 +1711,10 @@ export default function AdminDashboard() {
 
   const [salvandoTipoCliente, setSalvandoTipoCliente] = useState(false);
 
+  // Configurações do site
+  const [siteConfig, setSiteConfig] = useState<{ textoFuncionamento: string }>({ textoFuncionamento: '' });
+  const [siteConfigSalvando, setSiteConfigSalvando] = useState(false);
+
   // Email e mensagens
 
   const [whatsappConfig, setWhatsappConfig] = useState<WhatsappConfig>({
@@ -2964,6 +2969,8 @@ const totalParticipantesDoDia = useMemo(() => {
     { id: 'whatsapp', label: 'WhatsApp', description: 'QR e disparador', icon: FaWhatsapp },
 
     { id: 'pesquisa', label: 'Pesquisa', description: 'Histórico de reservas', icon: FaSearch },
+
+    { id: 'configuracoes', label: 'Site', description: 'Informações do site', icon: FaCog },
 
   ];
 
@@ -4765,6 +4772,27 @@ const totalParticipantesDoDia = useMemo(() => {
 
   }, []);
 
+  const fetchSiteConfig = useCallback(async () => {
+    try {
+      const snap = await getDoc(doc(db, 'configuracoes', 'site'));
+      const data = snap.exists() ? (snap.data() as Record<string, any>) : {};
+      setSiteConfig({ textoFuncionamento: data.textoFuncionamento ?? '' });
+    } catch (error) {
+      console.error('Erro ao carregar configuracoes do site:', error);
+    }
+  }, []);
+
+  const salvarSiteConfig = useCallback(async () => {
+    setSiteConfigSalvando(true);
+    try {
+      await setDoc(doc(db, 'configuracoes', 'site'), { textoFuncionamento: siteConfig.textoFuncionamento.trim() }, { merge: true });
+    } catch (error) {
+      console.error('Erro ao salvar configuracoes do site:', error);
+    } finally {
+      setSiteConfigSalvando(false);
+    }
+  }, [siteConfig]);
+
   const obterModelosWhatsappNormalizados = () => {
     const modelosComAlgumValor = (whatsappConfig.modelosMensagemManual ?? []).filter((item) => {
       const titulo = item.titulo?.trim() ?? '';
@@ -5403,8 +5431,11 @@ const totalParticipantesDoDia = useMemo(() => {
 
   useEffect(() => {
     void fetchWhatsappConfig();
-
   }, [fetchWhatsappConfig]);
+
+  useEffect(() => {
+    void fetchSiteConfig();
+  }, [fetchSiteConfig]);
 
   useEffect(() => {
     if (aba !== 'whatsapp') return;
@@ -14119,6 +14150,42 @@ const totalParticipantesDoDia = useMemo(() => {
 
         </section>
 
+      )}
+
+      {aba === 'configuracoes' && (
+        <section className="admin-tab-content space-y-6">
+          <AdminTabHeader
+            title="Configurações do site"
+            description="Informações exibidas publicamente no site. Altere aqui e o site atualiza automaticamente."
+            icon={FaCog}
+            actions={[
+              {
+                label: siteConfigSalvando ? 'Salvando...' : 'Salvar',
+                icon: FaCheck,
+                onClick: salvarSiteConfig,
+                disabled: siteConfigSalvando,
+              },
+            ]}
+          />
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-5">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                Texto de funcionamento
+              </label>
+              <input
+                type="text"
+                value={siteConfig.textoFuncionamento}
+                onChange={(e) => setSiteConfig((prev) => ({ ...prev, textoFuncionamento: e.target.value }))}
+                placeholder="Ex: Sábados e Domingos · 9h às 14h · Vagas limitadas"
+                className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-[#8B4F23]/20 focus:border-[#8B4F23] bg-white"
+              />
+              <p className="text-xs text-slate-400 mt-1.5">
+                Aparece abaixo do botão de reserva na seção Brunch e no rodapé do site. Deixe em branco para ocultar.
+              </p>
+            </div>
+          </div>
+        </section>
       )}
 
         </div>

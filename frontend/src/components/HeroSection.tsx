@@ -10,19 +10,18 @@ export function HeroSection() {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   useEffect(() => {
-    const intervalId = window.setInterval(() => {
+    const id = window.setInterval(() => {
       setActiveImageIndex((prev) => (prev + 1) % heroImages.length);
     }, 6000);
-
-    return () => window.clearInterval(intervalId);
+    return () => window.clearInterval(id);
   }, []);
 
   return (
     <section
       id="inicio"
-      className="relative flex min-h-screen items-center justify-center overflow-hidden pt-20 md:pt-0"
+      className="relative flex min-h-screen items-center justify-center overflow-hidden"
     >
-      {/* Imagens com fade + zoom Ken Burns */}
+      {/* Imagens com fade + Ken Burns */}
       <div className="absolute inset-0">
         {heroImages.map((image, index) => {
           const ativo = index === activeImageIndex;
@@ -43,39 +42,61 @@ export function HeroSection() {
         })}
       </div>
 
-      {/* Camadas de overlay para legibilidade */}
-      <div className="absolute inset-0 bg-gradient-to-b from-[rgba(45,30,15,0.55)] via-[rgba(45,30,15,0.45)] to-[rgba(45,30,15,0.85)]" />
+      {/* Overlay gradiente */}
+      <div className="absolute inset-0 bg-gradient-to-b from-[rgba(10,6,2,0.6)] via-[rgba(45,30,15,0.35)] to-[rgba(45,30,15,0.82)]" />
 
-      {/* Conteúdo */}
-      <div className="relative z-10 mx-auto flex w-full max-w-screen-2xl flex-col items-center px-4 py-16 sm:px-6 md:py-0 lg:px-8">
+      {/* Conteúdo centralizado */}
+      <div className="relative z-10 mx-auto flex w-full max-w-screen-xl flex-col items-center px-4 sm:px-6 lg:px-8 pt-24 pb-20 md:pt-0 md:pb-0">
         <div className="w-full max-w-4xl text-center lg:max-w-5xl">
-          <span className="inline-block text-[11px] font-bold uppercase tracking-[0.32em] text-[#E0B13C] mb-4 animate-fade-in">
+
+          {/* Badge localização */}
+          <span
+            className="inline-block text-[11px] font-bold uppercase text-[#E0B13C] mb-5 animate-hero-badge"
+            style={{ animationDelay: "100ms" }}
+          >
             Pirenópolis · Goiás
           </span>
-          <h1 className="mb-6 text-4xl font-bold leading-[1.1] tracking-tight text-white drop-shadow-2xl md:text-6xl lg:text-7xl animate-slide-up">
-            Descubra o<br className="hidden sm:block" />
-            <span className="text-[#E0B13C]">Santuário Vagafogo</span>
+
+          {/* Título principal */}
+          <h1
+            className="font-display mb-6 text-5xl font-bold leading-[1.08] tracking-tight text-white drop-shadow-2xl md:text-7xl lg:text-8xl animate-hero-reveal"
+            style={{ animationDelay: "350ms" }}
+          >
+            Descubra o{" "}
+            <em className="not-italic text-[#E0B13C]">Santuário</em>
+            <br className="hidden sm:block" />
+            <em className="not-italic text-[#E0B13C]">Vagafogo</em>
           </h1>
-          <p className="mx-auto mb-10 max-w-2xl text-base leading-relaxed text-white/90 drop-shadow md:text-lg lg:text-xl animate-slide-up" style={{ animationDelay: "120ms" }}>
+
+          {/* Subtítulo */}
+          <p
+            className="mx-auto mb-10 max-w-2xl text-base leading-relaxed text-white/85 drop-shadow md:text-lg lg:text-xl animate-hero-reveal"
+            style={{ animationDelay: "650ms" }}
+          >
             Uma experiência gastronômica única, aliada às maravilhas do cerrado brasileiro.
             Sabores que emocionam, natureza que encanta.
           </p>
-          <div className="flex flex-wrap justify-center gap-3 sm:gap-4 animate-slide-up" style={{ animationDelay: "240ms" }}>
+
+          {/* CTAs */}
+          <div
+            className="flex flex-wrap justify-center gap-3 sm:gap-4 animate-hero-reveal"
+            style={{ animationDelay: "900ms" }}
+          >
             <Link
               to="/reservar"
-              className="group inline-flex items-center gap-2 rounded-full bg-[#8B4F23] px-7 py-3.5 text-sm font-semibold text-white shadow-xl shadow-black/20 transition-all duration-300 hover:bg-[#A05D2B] hover:shadow-2xl hover:-translate-y-0.5 sm:text-base sm:px-8 sm:py-4"
+              className="group inline-flex items-center gap-2 rounded-full bg-[#8B4F23] px-8 py-4 text-sm font-semibold text-white shadow-xl shadow-black/25 transition-all duration-300 hover:bg-[#A05D2B] hover:shadow-2xl hover:-translate-y-0.5 sm:text-base"
             >
               <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
               Faça sua reserva
-              <svg className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+              <svg className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </Link>
             <a
               href="#brunch"
-              className="inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/5 px-7 py-3.5 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-300 hover:bg-white hover:text-[#2D1E0F] hover:border-white sm:text-base sm:px-8 sm:py-4"
+              className="inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/8 px-8 py-4 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-300 hover:bg-white hover:text-[#2D1E0F] hover:border-white sm:text-base"
             >
               Conheça o brunch
             </a>
@@ -83,13 +104,13 @@ export function HeroSection() {
         </div>
       </div>
 
-      {/* Indicadores das imagens */}
-      <div className="absolute bottom-20 left-1/2 z-10 flex -translate-x-1/2 gap-2 md:bottom-12">
+      {/* Indicadores de imagem */}
+      <div className="absolute bottom-16 left-1/2 z-10 flex -translate-x-1/2 gap-2 md:bottom-10 animate-hero-reveal" style={{ animationDelay: "1200ms" }}>
         {heroImages.map((_, index) => (
           <button
             key={index}
             type="button"
-            aria-label={`Ir para imagem ${index + 1}`}
+            aria-label={`Imagem ${index + 1}`}
             onClick={() => setActiveImageIndex(index)}
             className={`h-1 rounded-full transition-all duration-500 ${
               index === activeImageIndex
@@ -104,11 +125,14 @@ export function HeroSection() {
       <a
         href="#brunch"
         aria-label="Rolar para baixo"
-        className="absolute bottom-6 left-1/2 z-10 hidden -translate-x-1/2 animate-bounce text-white/70 hover:text-white md:flex md:bottom-3"
+        className="absolute bottom-5 left-1/2 z-10 hidden -translate-x-1/2 text-white/60 hover:text-white md:flex animate-hero-reveal"
+        style={{ animationDelay: "1400ms" }}
       >
-        <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-        </svg>
+        <span className="animate-bounce">
+          <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+        </span>
       </a>
     </section>
   );

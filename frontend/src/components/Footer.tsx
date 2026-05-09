@@ -1,7 +1,9 @@
 import { Link } from "react-router-dom";
+import { useConfigSite } from "../hooks/useConfigSite";
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
+  const { config } = useConfigSite();
 
   return (
     <footer className="bg-[#2D1E0F] text-white">
@@ -101,12 +103,14 @@ export function Footer() {
                   (62) 99222-5471
                 </a>
               </li>
-              <li className="text-gray-300 text-sm flex items-start gap-2">
-                <svg className="w-4 h-4 mt-0.5 text-[#E0B13C] flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>Sáb e Dom – Brunch: 9h às 14h</span>
-              </li>
+              {config.textoFuncionamento && (
+                <li className="text-gray-300 text-sm flex items-start gap-2">
+                  <svg className="w-4 h-4 mt-0.5 text-[#E0B13C] flex-shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>{config.textoFuncionamento}</span>
+                </li>
+              )}
             </ul>
           </div>
 
