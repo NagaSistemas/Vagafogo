@@ -2262,7 +2262,7 @@ export function BookingSection() {
               <form
                 onSubmit={handleSubmit}
                 noValidate
-                className="rounded-3xl border border-slate-200 bg-white p-5 shadow-xl sm:p-7 md:p-8"
+                className="rounded-2xl sm:rounded-3xl border border-slate-200 bg-white p-4 shadow-xl sm:p-7 md:p-8"
               >
                 <div className="mb-6 sm:mb-8">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -3220,7 +3220,7 @@ export function BookingSection() {
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Endereço de cobrança</p>
 
                     {/* CEP + Rua */}
-                    <div className="grid grid-cols-[7rem_1fr] gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[7rem_1fr]">
                       <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
                         CEP
                         <input
@@ -3247,7 +3247,7 @@ export function BookingSection() {
                     </div>
 
                     {/* Número + Complemento */}
-                    <div className="grid grid-cols-[7rem_1fr] gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[7rem_1fr]">
                       <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
                         Número
                         <input
@@ -3272,8 +3272,8 @@ export function BookingSection() {
                     </div>
 
                     {/* Bairro + Cidade + UF */}
-                    <div className="grid grid-cols-[1fr_1fr_5rem] gap-3">
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <div className="grid grid-cols-[1fr_4rem] gap-3 sm:grid-cols-[1fr_1fr_5rem]">
+                      <label className="col-span-2 sm:col-span-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">
                         Bairro
                         <input
                           type="text"
@@ -3318,12 +3318,12 @@ export function BookingSection() {
 
                 {etapa === 4 && <div className="mb-6 lg:hidden">{resumoCardMobile}</div>}
 
-                <div className="mt-8 flex flex-col-reverse gap-3 border-t border-slate-200 pt-6 sm:mt-10 sm:flex-row sm:items-center sm:justify-between">
+                <div className="mt-6 sm:mt-10 border-t border-slate-200 pt-5 sm:pt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <button
                     type="button"
                     onClick={handleVoltarEtapa}
                     disabled={etapa === 0 || loading}
-                    className="inline-flex items-center gap-1.5 justify-center rounded-full border border-slate-200 bg-white px-5 py-3 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="w-full sm:w-auto inline-flex items-center gap-1.5 justify-center rounded-full border border-slate-200 bg-white px-5 py-3.5 sm:py-3 text-sm font-medium text-slate-600 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
@@ -3335,7 +3335,7 @@ export function BookingSection() {
                     <button
                       type="button"
                       onClick={handleAvancarEtapa}
-                      className="inline-flex items-center gap-2 justify-center rounded-full bg-[#8B4F23] px-7 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-[#A05D2B] hover:shadow-md"
+                      className="w-full sm:w-auto inline-flex items-center gap-2 justify-center rounded-full bg-[#8B4F23] px-7 py-3.5 sm:py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-[#A05D2B] hover:shadow-md"
                     >
                       Continuar
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -3345,10 +3345,8 @@ export function BookingSection() {
                   ) : (
                     <button
                       type="submit"
-                      disabled={
-                        loading || selectedPackages.length === 0 || bloqueiaEnvioCartao
-                      }
-                      className="inline-flex items-center gap-2 justify-center rounded-full bg-[#8B4F23] px-7 py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-[#A05D2B] hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+                      disabled={loading || selectedPackages.length === 0 || bloqueiaEnvioCartao}
+                      className="w-full sm:w-auto inline-flex items-center gap-2 justify-center rounded-full bg-[#8B4F23] px-7 py-3.5 sm:py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-[#A05D2B] hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {loading
                         ? "Processando..."
@@ -3385,7 +3383,7 @@ export function BookingSection() {
                       <img
                         src={qrCodeImage}
                         alt="QR Code PIX"
-                        className="mx-auto block h-48 w-48 sm:h-56 sm:w-56"
+                        className="mx-auto block h-40 w-40 sm:h-52 sm:w-52"
                       />
                     </div>
                   ) : checkoutUrl ? (

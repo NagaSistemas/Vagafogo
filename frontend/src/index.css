@@ -71,6 +71,15 @@ body {
     content-visibility: auto;
     contain-intrinsic-size: 1px 800px;
   }
+
+  /* Esconde scrollbar mantendo scroll funcional */
+  .scrollbar-none {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* Ken Burns sutil na hero ativa */
