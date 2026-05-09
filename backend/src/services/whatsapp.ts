@@ -172,7 +172,7 @@ const REMOTE_BACKUP_INTERVAL_MS = parseNumber(
 );
 const WHATSAPP_IDLE_TIMEOUT_MS = parseNumber(
   process.env.WHATSAPP_IDLE_TIMEOUT_MS,
-  15 * 60 * 1000
+  10 * 60 * 1000
 );
 const WHATSAPP_QR_IDLE_TIMEOUT_MS = parseNumber(
   process.env.WHATSAPP_QR_IDLE_TIMEOUT_MS,
