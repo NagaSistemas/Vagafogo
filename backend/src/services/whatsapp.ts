@@ -168,7 +168,7 @@ const WHATSAPP_AUTH_SESSION_PATH = path.resolve(
 );
 const REMOTE_BACKUP_INTERVAL_MS = parseNumber(
   process.env.WHATSAPP_REMOTE_BACKUP_MS,
-  60000 // 1 min
+  300000 // 5 min — reduz egress no Firebase Storage
 );
 const WHATSAPP_IDLE_TIMEOUT_MS = parseNumber(
   process.env.WHATSAPP_IDLE_TIMEOUT_MS,
@@ -254,6 +254,7 @@ const clearLifecycleTimers = () => {
   clearStartupTimer();
 };
 
+// Encerra com timeout — se destroy() travar, mata o processo Chrome no SIGKILL
 const encerrarRuntimeSemLogout = async (reason: string) => {
   clearRetryTimer();
   clearLifecycleTimers();
@@ -267,10 +268,23 @@ const encerrarRuntimeSemLogout = async (reason: string) => {
   lastInfo = null;
   lastError = reason;
 
-  try {
-    await clienteAtual?.destroy();
-  } catch (error) {
-    console.warn("[whatsapp] Falha ao encerrar runtime:", error);
+  if (clienteAtual) {
+    const browserProcess = (clienteAtual as any)?.pupBrowser?.process?.();
+    const destroyPromise = clienteAtual.destroy().catch((error) => {
+      console.warn("[whatsapp] destroy() falhou:", error);
+    });
+    const timeoutPromise = new Promise<void>((resolve) => setTimeout(resolve, 8000));
+    await Promise.race([destroyPromise, timeoutPromise]);
+
+    // Se Chrome ainda esta vivo, mata no SIGKILL
+    if (browserProcess && !browserProcess.killed) {
+      try {
+        console.log(`[whatsapp] Forçando SIGKILL no Chrome (pid=${browserProcess.pid})`);
+        browserProcess.kill("SIGKILL");
+      } catch (error) {
+        console.warn("[whatsapp] Falha ao forçar SIGKILL:", error);
+      }
+    }
   }
 
   setTimeout(() => {
@@ -331,7 +345,19 @@ const handleInitFailure = (error?: unknown) => {
   qrDataUrl = null;
   lastInfo = null;
   if (client) {
-    client.destroy().catch(() => undefined);
+    const clienteAtual = client;
+    const browserProcess = (clienteAtual as any)?.pupBrowser?.process?.();
+    clienteAtual.destroy().catch(() => undefined);
+    // Garante que Chrome morre mesmo se destroy() falhar
+    setTimeout(() => {
+      if (browserProcess && !browserProcess.killed) {
+        try {
+          browserProcess.kill("SIGKILL");
+        } catch {
+          // noop
+        }
+      }
+    }, 5000);
   }
   client = null;
   scheduleRetry(lastError);
@@ -535,6 +561,7 @@ export function iniciarWhatsApp(): void {
         "--disable-setuid-sandbox",
         "--disable-dev-shm-usage",
         "--no-zygote",
+        "--single-process", // junta renderer + main = menos RAM (~300MB)
         "--disable-gpu",
         "--disable-software-rasterizer",
         "--disable-webgl",
@@ -542,9 +569,12 @@ export function iniciarWhatsApp(): void {
         "--disable-extensions",
         "--disable-background-networking",
         "--disable-sync",
+        "--disable-default-apps",
+        "--disable-features=IsolateOrigins,site-per-process,TranslateUI",
         "--metrics-recording-only",
         "--mute-audio",
         "--no-first-run",
+        "--no-default-browser-check",
         "--js-flags=--max-old-space-size=256",
       ],
       ...(executablePath ? { executablePath } : {}),
@@ -682,6 +712,12 @@ export async function desconectarWhatsApp(): Promise<void> {
     lastInfo = null;
     lastError = null;
   }
+}
+
+// Chamado pelo monitor de memoria — forca encerramento se RSS estiver alto
+export async function encerrarWhatsAppSeMemoriaAlta(rssMB: number): Promise<void> {
+  if (!client && !initializing) return;
+  await encerrarRuntimeSemLogout(`memoria_alta_${rssMB}MB`);
 }
 
 export function obterStatusWhatsApp(): WhatsappStatusPayload {

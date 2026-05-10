@@ -20,6 +20,7 @@ import {
   enviarBoasVindasWhatsapp,
   iniciarWhatsApp,
   obterStatusWhatsApp,
+  encerrarWhatsAppSeMemoriaAlta,
 } from "../services/whatsapp";
 
 const app = express();
@@ -273,6 +274,16 @@ const WHATSAPP_AUTO_START = (process.env.WHATSAPP_AUTO_START ?? "false").toLower
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);
   iniciarLimpezaAutomaticaReservas();
+
+  // Monitor de memoria — encerra WhatsApp se RSS passar do limite (default 700MB)
+  const limiteMemoriaMB = Number(process.env.MEMORY_GUARD_MB ?? 700);
+  setInterval(() => {
+    const rssMB = Math.round(process.memoryUsage().rss / 1024 / 1024);
+    if (rssMB > limiteMemoriaMB) {
+      console.warn(`[memory-guard] RSS=${rssMB}MB > ${limiteMemoriaMB}MB — encerrando WhatsApp`);
+      void encerrarWhatsAppSeMemoriaAlta(rssMB);
+    }
+  }, 60000);
 
   if (WHATSAPP_AUTO_START) {
     console.log("[whatsapp] Inicializacao automatica habilitada.");
