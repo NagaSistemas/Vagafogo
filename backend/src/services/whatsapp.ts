@@ -168,11 +168,16 @@ const WHATSAPP_AUTH_SESSION_PATH = path.resolve(
 );
 const REMOTE_BACKUP_INTERVAL_MS = parseNumber(
   process.env.WHATSAPP_REMOTE_BACKUP_MS,
-  300000 // 5 min — reduz egress no Firebase Storage
+  900000 // 15 min — backup do session.zip e caro (egress); auth muda pouco
 );
 const WHATSAPP_IDLE_TIMEOUT_MS = parseNumber(
   process.env.WHATSAPP_IDLE_TIMEOUT_MS,
   10 * 60 * 1000
+);
+// Tempo de vida MAXIMO absoluto do Chrome — mata mesmo se houver reconnect loop
+const WHATSAPP_MAX_LIFETIME_MS = parseNumber(
+  process.env.WHATSAPP_MAX_LIFETIME_MS,
+  20 * 60 * 1000
 );
 const WHATSAPP_QR_IDLE_TIMEOUT_MS = parseNumber(
   process.env.WHATSAPP_QR_IDLE_TIMEOUT_MS,
@@ -210,6 +215,7 @@ let retryTimer: NodeJS.Timeout | null = null;
 let idleTimer: NodeJS.Timeout | null = null;
 let qrIdleTimer: NodeJS.Timeout | null = null;
 let startupTimer: NodeJS.Timeout | null = null;
+let lifetimeTimer: NodeJS.Timeout | null = null;
 let intentionalShutdownReason: string | null = null;
 
 const limparSessaoWhatsapp = async () => {
@@ -248,10 +254,18 @@ const clearStartupTimer = () => {
   }
 };
 
+const clearLifetimeTimer = () => {
+  if (lifetimeTimer) {
+    clearTimeout(lifetimeTimer);
+    lifetimeTimer = null;
+  }
+};
+
 const clearLifecycleTimers = () => {
   clearIdleTimer();
   clearQrIdleTimer();
   clearStartupTimer();
+  clearLifetimeTimer();
 };
 
 // Encerra com timeout — se destroy() travar, mata o processo Chrome no SIGKILL
@@ -530,6 +544,14 @@ export function iniciarWhatsApp(): void {
   status = "initializing";
   lastError = null;
 
+  // Tempo de vida maximo absoluto — mata o Chrome mesmo em reconnect loop
+  if (WHATSAPP_MAX_LIFETIME_MS > 0) {
+    lifetimeTimer = setTimeout(() => {
+      console.warn(`[whatsapp] Tempo de vida maximo (${Math.round(WHATSAPP_MAX_LIFETIME_MS / 60000)}min) atingido — encerrando`);
+      void encerrarRuntimeSemLogout("tempo_vida_maximo");
+    }, WHATSAPP_MAX_LIFETIME_MS);
+  }
+
   const store = obterFirebaseStore();
   lastAuthStrategy = store ? "remote" : "local";
   const authStrategy = store
@@ -718,6 +740,17 @@ export async function desconectarWhatsApp(): Promise<void> {
 export async function encerrarWhatsAppSeMemoriaAlta(rssMB: number): Promise<void> {
   if (!client && !initializing) return;
   await encerrarRuntimeSemLogout(`memoria_alta_${rssMB}MB`);
+}
+
+// Loga a config ativa — util para diagnosticar custos no Railway
+export function logarConfigWhatsapp(): void {
+  console.log("[whatsapp][config] Valores ativos (env sobrescreve default):", {
+    AUTO_START: (process.env.WHATSAPP_AUTO_START ?? "false"),
+    IDLE_TIMEOUT_min: Math.round(WHATSAPP_IDLE_TIMEOUT_MS / 60000),
+    MAX_LIFETIME_min: Math.round(WHATSAPP_MAX_LIFETIME_MS / 60000),
+    BACKUP_INTERVAL_min: Math.round(REMOTE_BACKUP_INTERVAL_MS / 60000),
+    QR_IDLE_min: Math.round(WHATSAPP_QR_IDLE_TIMEOUT_MS / 60000),
+  });
 }
 
 export function obterStatusWhatsApp(): WhatsappStatusPayload {

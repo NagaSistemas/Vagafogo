@@ -21,6 +21,7 @@ import {
   iniciarWhatsApp,
   obterStatusWhatsApp,
   encerrarWhatsAppSeMemoriaAlta,
+  logarConfigWhatsapp,
 } from "../services/whatsapp";
 
 const app = express();
@@ -274,6 +275,7 @@ const WHATSAPP_AUTO_START = (process.env.WHATSAPP_AUTO_START ?? "false").toLower
 app.listen(port, () => {
   console.log(`Servidor rodando na porta ${port}`);
   iniciarLimpezaAutomaticaReservas();
+  logarConfigWhatsapp();
 
   // Monitor de memoria — encerra WhatsApp se RSS passar do limite (default 700MB)
   const limiteMemoriaMB = Number(process.env.MEMORY_GUARD_MB ?? 700);
