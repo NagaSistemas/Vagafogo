@@ -5441,12 +5441,15 @@ const totalParticipantesDoDia = useMemo(() => {
     if (aba !== 'whatsapp') return;
 
     void carregarStatusWhatsapp();
+    // 5s quando esperando QR/conexao, 30s quando estavel — reduz egress
+    const isTransitioning = whatsappStatus.status === 'initializing' || whatsappStatus.status === 'qr';
+    const intervalo = isTransitioning ? 5000 : 30000;
     const intervalId = window.setInterval(() => {
       void carregarStatusWhatsapp();
-    }, 5000);
+    }, intervalo);
 
     return () => window.clearInterval(intervalId);
-  }, [aba, carregarStatusWhatsapp]);
+  }, [aba, carregarStatusWhatsapp, whatsappStatus.status]);
 
   useEffect(() => {
     if (aba !== 'email') return;
