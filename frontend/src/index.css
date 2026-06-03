@@ -82,6 +82,41 @@ body {
   }
 }
 
+/* ==========================================
+   Scroll Reveal — transições reversíveis
+   Estrutura: wrapper .reveal anima opacity/transform;
+   filho .reveal-inner faz hover lift (sem conflito).
+   ========================================== */
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition-property: opacity, transform, filter;
+  transition-duration: 0.8s;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal-left { transform: translateX(-40px); }
+.reveal-right { transform: translateX(40px); }
+.reveal-scale { transform: scale(0.94); }
+.reveal-fade { transform: none; }
+.reveal-blur { filter: blur(8px); }
+
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0) translateX(0) scale(1);
+  filter: blur(0);
+}
+
+/* Respeita preferencia do usuario por menos movimento */
+@media (prefers-reduced-motion: reduce) {
+  .reveal,
+  .reveal-blur {
+    transition: opacity 0.3s ease;
+    transform: none !important;
+    filter: none !important;
+  }
+}
+
 /* Ken Burns sutil na hero ativa */
 .hero-image-active {
   animation: heroKenBurns 12s ease-out forwards;

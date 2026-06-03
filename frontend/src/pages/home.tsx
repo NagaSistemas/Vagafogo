@@ -6,6 +6,7 @@ import { TrailSection } from "../components/TrailSection.tsx"
 import { EducationSection } from "../components/EducationSection.tsx"
 import { Footer } from "../components/Footer.tsx"
 import { FloatingButtons } from "../components/FloatingButtons.tsx"
+import { Reveal } from "../components/Reveal.tsx"
 import { Link } from "react-router-dom"
 
 export function Home() {
@@ -23,6 +24,7 @@ export function Home() {
         {/* CTA Section */}
         <section className="py-20 md:py-24 bg-[#F1F4E5]">
           <div className="mx-auto w-full max-w-screen-xl px-4 sm:px-6 lg:px-8">
+            <Reveal variant="scale" className="block">
             <div className="relative rounded-[28px] overflow-hidden bg-gradient-to-br from-[#2D1E0F] via-[#3a2715] to-[#1a120a] px-8 py-14 md:px-16 md:py-20 shadow-2xl border border-[#E0B13C]/10">
               {/* Decorativos */}
               <div className="pointer-events-none absolute top-0 right-0 w-96 h-96 rounded-full opacity-15 -translate-y-1/2 translate-x-1/3 bg-[#E0B13C] blur-3xl" />
@@ -30,17 +32,19 @@ export function Home() {
 
               <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-10">
                 <div className="text-center md:text-left max-w-xl">
-                  <span className="inline-block text-[11px] font-bold uppercase tracking-[0.32em] text-[#E0B13C] mb-3">Reservas abertas</span>
-                  <h2 className="text-3xl md:text-4xl lg:text-5xl font-bold text-white leading-[1.1] tracking-tight">
+                  <Reveal variant="up" delay={150}>
+                    <span className="inline-block text-[11px] font-bold uppercase tracking-[0.32em] text-[#E0B13C] mb-3">Reservas abertas</span>
+                  </Reveal>
+                  <Reveal variant="up" delay={250} as="h2" className="font-display text-3xl md:text-4xl lg:text-5xl font-bold text-white leading-[1.1] tracking-tight">
                     Faça sua reserva em <br className="hidden md:block" />
                     <span className="text-[#E0B13C]">poucos passos</span>
-                  </h2>
-                  <p className="mt-4 text-gray-300 text-sm md:text-base leading-relaxed">
+                  </Reveal>
+                  <Reveal variant="up" delay={350} as="p" className="mt-4 text-gray-300 text-sm md:text-base leading-relaxed">
                     Escolha o pacote, selecione a data e horário, e finalize o pagamento de forma simples e segura.
-                  </p>
+                  </Reveal>
                 </div>
 
-                <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto md:flex-shrink-0">
+                <Reveal variant="right" delay={400} className="flex flex-col sm:flex-row gap-3 w-full md:w-auto md:flex-shrink-0">
                   <Link
                     to="/reservar"
                     className="group inline-flex items-center justify-center gap-2 bg-[#8B4F23] text-white font-semibold px-8 py-4 rounded-full shadow-xl hover:bg-[#A05D2B] transition-all duration-300 hover:shadow-2xl hover:-translate-y-0.5 text-sm whitespace-nowrap"
@@ -64,9 +68,10 @@ export function Home() {
                     </svg>
                     Falar no WhatsApp
                   </a>
-                </div>
+                </Reveal>
               </div>
             </div>
+            </Reveal>
           </div>
         </section>
 

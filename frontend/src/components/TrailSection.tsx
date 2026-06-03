@@ -1,7 +1,7 @@
 import HeroImg from '../assets/trilhaecologica/trilhaecologica-1.jpg'
 import Trilha from '../assets/trilhaecologica/trilhaecologica-2.jpg'
 import { Link } from "react-router-dom"
-import { useReveal } from "../hooks/useReveal"
+import { Reveal } from "./Reveal"
 
 const features = [
   "Espaços estratégicos para descanso e meditação",
@@ -12,10 +12,6 @@ const features = [
 ];
 
 export function TrailSection() {
-  const { ref: headRef, revealed: headRevealed } = useReveal<HTMLDivElement>();
-  const { ref: imgRef, revealed: imgRevealed } = useReveal<HTMLDivElement>();
-  const { ref: textRef, revealed: textRevealed } = useReveal<HTMLDivElement>();
-
   return (
     <section
       id="trilha"
@@ -34,23 +30,22 @@ export function TrailSection() {
       </div>
 
       <div className="relative mx-auto w-full max-w-screen-xl px-4 sm:px-6 lg:px-8">
-        <div ref={headRef} className={`mx-auto max-w-3xl text-center mb-14 ${headRevealed ? "animate-reveal" : "opacity-0"}`}>
-          <span className="inline-block text-[11px] font-bold uppercase tracking-[0.32em] text-emerald-300 bg-emerald-400/10 px-4 py-1.5 rounded-full mb-4 border border-emerald-400/20">
-            Conexão com a Natureza
-          </span>
-          <h2 className="text-3xl md:text-5xl lg:text-6xl font-bold text-white leading-[1.1] tracking-tight mb-3">
+        <div className="mx-auto max-w-3xl text-center mb-14">
+          <Reveal variant="up">
+            <span className="inline-block text-[11px] font-bold uppercase tracking-[0.32em] text-emerald-300 bg-emerald-400/10 px-4 py-1.5 rounded-full mb-4 border border-emerald-400/20">
+              Conexão com a Natureza
+            </span>
+          </Reveal>
+          <Reveal variant="up" delay={120} as="h2" className="font-display text-3xl md:text-5xl lg:text-6xl font-bold text-white leading-[1.1] tracking-tight mb-3">
             Trilha <span className="text-emerald-300">Ecológica</span>
-          </h2>
-          <p className="text-gray-200/80 text-base md:text-lg leading-relaxed max-w-2xl mx-auto">
+          </Reveal>
+          <Reveal variant="up" delay={240} as="p" className="text-gray-200/80 text-base md:text-lg leading-relaxed max-w-2xl mx-auto">
             Mata ciliar primária preservada margeando o Rio Vagafogo.
-          </p>
+          </Reveal>
         </div>
 
         <div className="flex flex-col lg:flex-row items-center gap-10 lg:gap-16 max-w-6xl mx-auto">
-          <div
-            ref={imgRef}
-            className={`lg:w-1/2 w-full flex-shrink-0 ${imgRevealed ? "animate-reveal" : "opacity-0"}`}
-          >
+          <Reveal variant="left" delay={100} className="lg:w-1/2 w-full flex-shrink-0">
             <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-white/10 group">
               <img
                 src={Trilha}
@@ -70,19 +65,14 @@ export function TrailSection() {
                 </div>
               </div>
 
-              {/* Selo decorativo */}
               <div className="absolute top-5 right-5 flex items-center gap-2 rounded-full bg-emerald-500/90 backdrop-blur-sm px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-white shadow-lg">
                 <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
                 Aberto hoje
               </div>
             </div>
-          </div>
+          </Reveal>
 
-          <div
-            ref={textRef}
-            className={`lg:w-1/2 text-white ${textRevealed ? "animate-reveal" : "opacity-0"}`}
-            style={{ animationDelay: textRevealed ? "120ms" : undefined }}
-          >
+          <Reveal variant="right" delay={200} className="lg:w-1/2 text-white">
             <h3 className="text-2xl lg:text-3xl font-bold mb-4 leading-tight">
               Caminhada Imersiva de 1.530m
             </h3>
@@ -92,18 +82,18 @@ export function TrailSection() {
 
             <ul className="space-y-3.5 mb-8">
               {features.map((item, i) => (
-                <li key={i} className="flex items-start gap-3 group">
+                <Reveal key={i} variant="left" delay={300 + i * 80} as="li" className="flex items-start gap-3 group">
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center mt-0.5 transition-all duration-300 group-hover:bg-emerald-500/30 group-hover:border-emerald-400">
                     <svg className="w-3 h-3 text-emerald-300" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                     </svg>
                   </span>
                   <span className="text-gray-200/90 text-sm leading-relaxed pt-0.5">{item}</span>
-                </li>
+                </Reveal>
               ))}
             </ul>
 
-            <div className="flex flex-wrap gap-3">
+            <Reveal variant="up" delay={700} className="flex flex-wrap gap-3">
               <Link
                 to="/reservar"
                 className="group inline-flex items-center gap-2 bg-white text-[#2D1E0F] font-semibold px-7 py-3.5 rounded-full shadow-xl hover:bg-gray-50 text-sm transition-all duration-300 hover:shadow-2xl hover:-translate-y-0.5"
@@ -122,8 +112,8 @@ export function TrailSection() {
               >
                 Educação Ambiental
               </a>
-            </div>
-          </div>
+            </Reveal>
+          </Reveal>
         </div>
       </div>
     </section>
