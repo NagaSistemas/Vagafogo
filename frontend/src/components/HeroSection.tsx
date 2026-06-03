@@ -104,8 +104,22 @@ export function HeroSection() {
         </div>
       </div>
 
+      {/* Scroll indicator */}
+      <a
+        href="#brunch"
+        aria-label="Rolar para baixo"
+        className="absolute bottom-16 left-1/2 z-10 hidden -translate-x-1/2 text-white/60 hover:text-white md:flex animate-hero-reveal"
+        style={{ animationDelay: "1200ms" }}
+      >
+        <span className="animate-bounce">
+          <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+          </svg>
+        </span>
+      </a>
+
       {/* Indicadores de imagem */}
-      <div className="absolute bottom-16 left-1/2 z-10 flex -translate-x-1/2 gap-2 md:bottom-10 animate-hero-reveal" style={{ animationDelay: "1200ms" }}>
+      <div className="absolute bottom-6 left-1/2 z-10 flex -translate-x-1/2 gap-2 animate-hero-reveal" style={{ animationDelay: "1400ms" }}>
         {heroImages.map((_, index) => (
           <button
             key={index}
@@ -120,20 +134,6 @@ export function HeroSection() {
           />
         ))}
       </div>
-
-      {/* Scroll indicator */}
-      <a
-        href="#brunch"
-        aria-label="Rolar para baixo"
-        className="absolute bottom-5 left-1/2 z-10 hidden -translate-x-1/2 text-white/60 hover:text-white md:flex animate-hero-reveal"
-        style={{ animationDelay: "1400ms" }}
-      >
-        <span className="animate-bounce">
-          <svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-          </svg>
-        </span>
-      </a>
     </section>
   );
 }
