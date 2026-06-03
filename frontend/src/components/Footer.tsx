@@ -76,6 +76,12 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link to="/historia/pirenopolis" className="text-gray-300 text-sm hover:text-white transition-colors flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-[#E0B13C]" />
+                  História de Pirenópolis
+                </Link>
+              </li>
+              <li>
                 <Link to="/reservar" className="text-gray-300 text-sm hover:text-white transition-colors flex items-center gap-2">
                   <span className="w-1 h-1 rounded-full bg-[#E0B13C]" />
                   Fazer Reserva

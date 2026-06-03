@@ -6,6 +6,7 @@ import { ProtectedRoute } from "./components/ProtectedRoute"
 import { Reserva } from "./pages/Reserva"
 import { MinhaReserva } from "./pages/MinhaReserva"
 import { Historia } from "./pages/Historia"
+import { HistoriaPirenopolis } from "./pages/HistoriaPirenopolis"
 
 export const router = createBrowserRouter([
   {
@@ -15,6 +16,10 @@ export const router = createBrowserRouter([
   {
     path: "/historia",
     element: <Historia />
+  },
+  {
+    path: "/historia/pirenopolis",
+    element: <HistoriaPirenopolis />
   },
   {
     path: "/reservar",
