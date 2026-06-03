@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import heroImg1 from "../assets/hero/hero-1.jpg";
 import heroImg2 from "../assets/hero/hero-2.jpg";
 import heroImg3 from "../assets/hero/hero-3.jpg";
+import { Magnetic } from "./Magnetic";
 
 const heroImages = [heroImg1, heroImg2, heroImg3];
 
@@ -82,9 +83,10 @@ export function HeroSection() {
             className="flex flex-wrap justify-center gap-3 sm:gap-4 animate-hero-reveal"
             style={{ animationDelay: "900ms" }}
           >
+            <Magnetic strength={0.25}>
             <Link
               to="/reservar"
-              className="group inline-flex items-center gap-2 rounded-full bg-[#8B4F23] px-8 py-4 text-sm font-semibold text-white shadow-xl shadow-black/25 transition-all duration-300 hover:bg-[#A05D2B] hover:shadow-2xl hover:-translate-y-0.5 sm:text-base"
+              className="btn-glow group inline-flex items-center gap-2 rounded-full bg-[#8B4F23] px-8 py-4 text-sm font-semibold text-white shadow-xl shadow-black/25 transition-all duration-300 hover:bg-[#A05D2B] hover:shadow-2xl sm:text-base"
             >
               <svg className="h-4 w-4 sm:h-5 sm:w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -94,6 +96,7 @@ export function HeroSection() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
               </svg>
             </Link>
+            </Magnetic>
             <a
               href="#brunch"
               className="inline-flex items-center gap-2 rounded-full border border-white/40 bg-white/8 px-8 py-4 text-sm font-semibold text-white backdrop-blur-sm transition-all duration-300 hover:bg-white hover:text-[#2D1E0F] hover:border-white sm:text-base"

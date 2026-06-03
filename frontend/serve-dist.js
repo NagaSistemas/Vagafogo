@@ -36,6 +36,8 @@ function safeJoin(baseDir, requestPath) {
   return joined;
 }
 
+const MEDIA_EXT = new Set([".mp4", ".webm", ".mp3", ".wav", ".jpg", ".jpeg", ".png", ".svg", ".ico", ".woff", ".woff2"]);
+
 function serveFile(filePath, res) {
   const ext = path.extname(filePath).toLowerCase();
   const contentType = mimeTypes[ext] ?? "application/octet-stream";
@@ -45,7 +47,9 @@ function serveFile(filePath, res) {
       ? "no-cache"
       : relativePath.startsWith("assets/")
         ? "public, max-age=31536000, immutable"
-        : "public, max-age=3600";
+        : MEDIA_EXT.has(ext)
+          ? "public, max-age=2592000" // 30 dias para mídia (videos, fontes, etc)
+          : "public, max-age=3600";
 
   fs.readFile(filePath, (err, content) => {
     if (err) {

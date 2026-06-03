@@ -7,11 +7,14 @@ import { EducationSection } from "../components/EducationSection.tsx"
 import { Footer } from "../components/Footer.tsx"
 import { FloatingButtons } from "../components/FloatingButtons.tsx"
 import { Reveal } from "../components/Reveal.tsx"
+import { IntroVideo } from "../components/IntroVideo.tsx"
+import { Magnetic } from "../components/Magnetic.tsx"
 import { Link } from "react-router-dom"
 
 export function Home() {
   return (
     <>
+      <IntroVideo />
       <Header />
       <FloatingButtons />
       <main>
@@ -45,9 +48,10 @@ export function Home() {
                 </div>
 
                 <Reveal variant="right" delay={400} className="flex flex-col sm:flex-row gap-3 w-full md:w-auto md:flex-shrink-0">
+                  <Magnetic strength={0.2} className="w-full sm:w-auto">
                   <Link
                     to="/reservar"
-                    className="group inline-flex items-center justify-center gap-2 bg-[#8B4F23] text-white font-semibold px-8 py-4 rounded-full shadow-xl hover:bg-[#A05D2B] transition-all duration-300 hover:shadow-2xl hover:-translate-y-0.5 text-sm whitespace-nowrap"
+                    className="btn-glow group inline-flex items-center justify-center gap-2 bg-[#8B4F23] text-white font-semibold px-8 py-4 rounded-full shadow-xl hover:bg-[#A05D2B] transition-all duration-300 hover:shadow-2xl text-sm whitespace-nowrap w-full"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -57,17 +61,20 @@ export function Home() {
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                     </svg>
                   </Link>
+                  </Magnetic>
+                  <Magnetic strength={0.2} className="w-full sm:w-auto">
                   <a
                     href="https://wa.me/5562992225471"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center justify-center gap-2 border border-white/20 bg-white/5 backdrop-blur-sm text-white font-medium px-8 py-4 rounded-full hover:bg-white/10 hover:border-white/40 transition-all duration-300 text-sm whitespace-nowrap"
+                    className="inline-flex items-center justify-center gap-2 border border-white/20 bg-white/5 backdrop-blur-sm text-white font-medium px-8 py-4 rounded-full hover:bg-white/10 hover:border-white/40 transition-all duration-300 text-sm whitespace-nowrap w-full"
                   >
                     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12.01 2C6.48 2 2 6.477 2 12.006c0 1.937.512 3.775 1.482 5.39L2.04 22l4.716-1.248A9.949 9.949 0 0 0 12.01 22c5.523 0 10.01-4.478 10.01-9.994C22.02 6.478 17.533 2 12.01 2zm5.236 14.395c-.242.683-1.406 1.35-1.924 1.38-.517.03-1.013.255-2.826-.607-2.38-.99-3.904-3.408-4.024-3.568-.12-.16-.96-1.277-.96-2.436s.608-1.728.824-1.963c.217-.234.48-.293.64-.293s.32-.005.459.007c.144.012.337-.055.528.407.192.462.652 1.595.711 1.71.06.115.096.257.018.413-.08.157-.12.256-.238.394-.12.138-.252.306-.36.412-.12.117-.243.244-.105.478.137.233.607 1.003 1.305 1.625.897.803 1.656 1.05 1.89 1.17.235.12.373.103.509-.06.136-.164.58-.675.734-.908.154-.232.308-.194.519-.117.211.076 1.335.63 1.565.744.23.115.384.17.442.266.06.096.06.554-.183 1.237z" />
                     </svg>
                     Falar no WhatsApp
                   </a>
+                  </Magnetic>
                 </Reveal>
               </div>
             </div>

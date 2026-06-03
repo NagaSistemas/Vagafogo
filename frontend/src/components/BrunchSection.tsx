@@ -4,6 +4,8 @@ import laticImg2 from '../assets/brunch/laticinios/brunch-2.jpg'
 import laticImg3 from '../assets/brunch/laticinios/brunch-3.jpg'
 import { Link } from "react-router-dom"
 import { Reveal } from "./Reveal"
+import { Spotlight } from "./Spotlight"
+import { Magnetic } from "./Magnetic"
 import { useConfigSite } from "../hooks/useConfigSite"
 
 const cards = [
@@ -62,6 +64,7 @@ export function BrunchSection() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5 lg:gap-6">
           {cards.map((card, i) => (
             <Reveal key={i} variant="up" delay={120 + i * 140} className="h-full">
+              <Spotlight color="rgba(224, 177, 60, 0.22)" className="h-full rounded-2xl">
               <article className="group h-full relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04] backdrop-blur-md transition-[background-color,border-color,box-shadow,transform] duration-500 hover:bg-white/[0.08] hover:border-[#E0B13C]/30 hover:-translate-y-1 hover:shadow-2xl">
                 <div className="relative h-56 overflow-hidden">
                   <img
@@ -83,14 +86,16 @@ export function BrunchSection() {
                   {i + 1}
                 </div>
               </article>
+              </Spotlight>
             </Reveal>
           ))}
         </div>
 
         <Reveal variant="up" delay={200} className="text-center mt-14 block">
+          <Magnetic strength={0.2}>
           <Link
             to="/reservar"
-            className="group inline-flex items-center gap-2.5 bg-[#8B4F23] text-white font-semibold px-8 py-4 rounded-full shadow-xl shadow-black/30 hover:bg-[#A05D2B] text-base transition-all duration-300 hover:shadow-2xl hover:-translate-y-0.5"
+            className="btn-glow group inline-flex items-center gap-2.5 bg-[#8B4F23] text-white font-semibold px-8 py-4 rounded-full shadow-xl shadow-black/30 hover:bg-[#A05D2B] text-base transition-all duration-300 hover:shadow-2xl"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -100,6 +105,7 @@ export function BrunchSection() {
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
             </svg>
           </Link>
+          </Magnetic>
           {config.textoFuncionamento && (
             <p className="text-gray-400 text-sm mt-4 flex items-center justify-center gap-2">
               <span className="inline-block h-1 w-1 rounded-full bg-[#E0B13C]" />

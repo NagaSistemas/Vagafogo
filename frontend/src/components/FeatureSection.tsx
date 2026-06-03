@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { Reveal } from "./Reveal";
+import { Spotlight } from "./Spotlight";
 
 const features = [
   {
@@ -68,6 +69,7 @@ export function FeatureSection() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-7">
           {features.map((feature, i) => (
             <Reveal key={i} variant="up" delay={100 + i * 120} className="h-full">
+              <Spotlight color={`${feature.accent}26`} className="h-full rounded-3xl">
               <div className="group h-full relative bg-white rounded-3xl shadow-sm border border-gray-100/80 overflow-hidden hover:shadow-2xl hover:-translate-y-1.5 transition-[box-shadow,transform] duration-500 flex flex-col">
               <div className="h-1 w-full transition-all duration-500 group-hover:h-1.5" style={{ backgroundColor: feature.accent }} />
 
@@ -119,6 +121,7 @@ export function FeatureSection() {
                 </div>
               </div>
               </div>
+              </Spotlight>
             </Reveal>
           ))}
         </div>

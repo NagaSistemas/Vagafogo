@@ -2,13 +2,15 @@ import HeroImg from '../assets/trilhaecologica/trilhaecologica-1.jpg'
 import Trilha from '../assets/trilhaecologica/trilhaecologica-2.jpg'
 import { Link } from "react-router-dom"
 import { Reveal } from "./Reveal"
+import { Magnetic } from "./Magnetic"
+import { FaLeaf, FaShieldAlt, FaWater, FaInfoCircle, FaDove } from "react-icons/fa"
 
 const features = [
-  "Espaços estratégicos para descanso e meditação",
-  "Corrimões para segurança em áreas mais íngremes",
-  "Piscina natural e uma pequena cachoeira",
-  "Placas informativas sobre flora e fauna do cerrado",
-  "182 espécies de pássaros catalogadas",
+  { icon: FaLeaf, text: "Espaços estratégicos para descanso e meditação" },
+  { icon: FaShieldAlt, text: "Corrimões para segurança em áreas mais íngremes" },
+  { icon: FaWater, text: "Piscina natural e uma pequena cachoeira" },
+  { icon: FaInfoCircle, text: "Placas informativas sobre flora e fauna do cerrado" },
+  { icon: FaDove, text: "182 espécies de pássaros catalogadas" },
 ];
 
 export function TrailSection() {
@@ -80,23 +82,22 @@ export function TrailSection() {
               Nossa trilha ecológica atravessa uma belíssima mata ciliar primária preservada, margeando o Rio Vagafogo. A trilha é completamente protegida por madeiramento, oferecendo conforto e segurança ao visitante.
             </p>
 
-            <ul className="space-y-3.5 mb-8">
-              {features.map((item, i) => (
-                <Reveal key={i} variant="left" delay={300 + i * 80} as="li" className="flex items-start gap-3 group">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center mt-0.5 transition-all duration-300 group-hover:bg-emerald-500/30 group-hover:border-emerald-400">
-                    <svg className="w-3 h-3 text-emerald-300" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
+            <ul className="space-y-3 mb-8">
+              {features.map(({ icon: Icon, text }, i) => (
+                <Reveal key={i} variant="left" delay={300 + i * 80} as="li" className="flex items-center gap-3.5 group cursor-default">
+                  <span className="flex-shrink-0 w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center transition-all duration-300 group-hover:bg-emerald-500/30 group-hover:border-emerald-400 group-hover:scale-110 group-hover:rotate-3">
+                    <Icon className="w-4 h-4 text-emerald-300 transition-transform duration-300 group-hover:scale-110" />
                   </span>
-                  <span className="text-gray-200/90 text-sm leading-relaxed pt-0.5">{item}</span>
+                  <span className="text-gray-200/90 text-sm leading-relaxed transition-colors duration-300 group-hover:text-white">{text}</span>
                 </Reveal>
               ))}
             </ul>
 
             <Reveal variant="up" delay={700} className="flex flex-wrap gap-3">
+              <Magnetic strength={0.2}>
               <Link
                 to="/reservar"
-                className="group inline-flex items-center gap-2 bg-white text-[#2D1E0F] font-semibold px-7 py-3.5 rounded-full shadow-xl hover:bg-gray-50 text-sm transition-all duration-300 hover:shadow-2xl hover:-translate-y-0.5"
+                className="btn-glow group inline-flex items-center gap-2 bg-white text-[#2D1E0F] font-semibold px-7 py-3.5 rounded-full shadow-xl hover:bg-gray-50 text-sm transition-all duration-300 hover:shadow-2xl"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -106,6 +107,7 @@ export function TrailSection() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>
               </Link>
+              </Magnetic>
               <a
                 href="#educacao"
                 className="inline-flex items-center gap-2 border border-white/30 bg-white/5 backdrop-blur-sm text-white font-medium px-7 py-3.5 rounded-full hover:bg-white/10 hover:border-white/50 text-sm transition-all duration-300"

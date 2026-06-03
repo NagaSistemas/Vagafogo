@@ -1,11 +1,13 @@
 import educationImg from '../assets/educacaoambiental/educacaoambiental-1.jpg'
 import { Reveal } from "./Reveal"
+import { Magnetic } from "./Magnetic"
+import { FaSchool, FaSeedling, FaGlobeAmericas, FaUserTie } from "react-icons/fa"
 
 const featuresList = [
-  "Para escolas, faculdades e grupos específicos",
-  "Interpretação sobre fauna e flora do cerrado",
-  "Importância da proteção ambiental local e global",
-  "Atividade principal realizada nas trilhas com monitor",
+  { icon: FaSchool, text: "Para escolas, faculdades e grupos específicos" },
+  { icon: FaSeedling, text: "Interpretação sobre fauna e flora do cerrado" },
+  { icon: FaGlobeAmericas, text: "Importância da proteção ambiental local e global" },
+  { icon: FaUserTie, text: "Atividade principal realizada nas trilhas com monitor" },
 ];
 
 export function EducationSection() {
@@ -53,15 +55,13 @@ export function EducationSection() {
               Atividade realizada nas trilhas com interpretação ambiental sobre flora, fauna, recursos naturais e sustentabilidade. Ideal para grupos escolares, universitários e corporativos.
             </p>
 
-            <ul className="space-y-3.5 mb-8">
-              {featuresList.map((item, i) => (
-                <Reveal key={i} variant="left" delay={300 + i * 80} as="li" className="flex items-start gap-3 group">
-                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-emerald-100 border border-emerald-200 flex items-center justify-center mt-0.5 transition-all duration-300 group-hover:bg-emerald-200">
-                    <svg className="w-3 h-3 text-emerald-700" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
+            <ul className="space-y-3 mb-8">
+              {featuresList.map(({ icon: Icon, text }, i) => (
+                <Reveal key={i} variant="left" delay={300 + i * 80} as="li" className="flex items-center gap-3.5 group cursor-default">
+                  <span className="flex-shrink-0 w-9 h-9 rounded-xl bg-emerald-100 border border-emerald-200 flex items-center justify-center transition-all duration-300 group-hover:bg-emerald-200 group-hover:border-emerald-400 group-hover:scale-110 group-hover:rotate-3">
+                    <Icon className="w-4 h-4 text-emerald-700 transition-transform duration-300 group-hover:scale-110" />
                   </span>
-                  <span className="text-gray-600 text-sm leading-relaxed pt-0.5">{item}</span>
+                  <span className="text-gray-600 text-sm leading-relaxed transition-colors duration-300 group-hover:text-gray-900">{text}</span>
                 </Reveal>
               ))}
             </ul>
@@ -76,11 +76,12 @@ export function EducationSection() {
             </Reveal>
 
             <Reveal variant="up" delay={850} className="block">
+              <Magnetic strength={0.2}>
               <a
                 href="https://wa.me/5562992225471"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="group inline-flex items-center gap-2.5 bg-[#25D366] text-white font-semibold px-8 py-4 rounded-full shadow-lg shadow-emerald-500/20 hover:bg-[#1ebe5d] text-base transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5"
+                className="group inline-flex items-center gap-2.5 bg-[#25D366] text-white font-semibold px-8 py-4 rounded-full shadow-lg shadow-emerald-500/20 hover:bg-[#1ebe5d] text-base transition-all duration-300 hover:shadow-xl"
               >
                 <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12.01 2C6.48 2 2 6.477 2 12.006c0 1.937.512 3.775 1.482 5.39L2.04 22l4.716-1.248A9.949 9.949 0 0 0 12.01 22c5.523 0 10.01-4.478 10.01-9.994C22.02 6.478 17.533 2 12.01 2zm5.236 14.395c-.242.683-1.406 1.35-1.924 1.38-.517.03-1.013.255-2.826-.607-2.38-.99-3.904-3.408-4.024-3.568-.12-.16-.96-1.277-.96-2.436s.608-1.728.824-1.963c.217-.234.48-.293.64-.293s.32-.005.459.007c.144.012.337-.055.528.407.192.462.652 1.595.711 1.71.06.115.096.257.018.413-.08.157-.12.256-.238.394-.12.138-.252.306-.36.412-.12.117-.243.244-.105.478.137.233.607 1.003 1.305 1.625.897.803 1.656 1.05 1.89 1.17.235.12.373.103.509-.06.136-.164.58-.675.734-.908.154-.232.308-.194.519-.117.211.076 1.335.63 1.565.744.23.115.384.17.442.266.06.096.06.554-.183 1.237z" />
@@ -90,6 +91,7 @@ export function EducationSection() {
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                 </svg>
               </a>
+              </Magnetic>
             </Reveal>
           </Reveal>
         </div>
