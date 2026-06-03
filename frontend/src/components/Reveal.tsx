@@ -9,7 +9,7 @@ interface RevealProps {
   delay?: number;
   duration?: number;
   className?: string;
-  as?: "div" | "section" | "article" | "li" | "span" | "h2" | "h3" | "p";
+  as?: "div" | "section" | "article" | "li" | "span" | "h1" | "h2" | "h3" | "p" | "blockquote";
   /** Anima só uma vez (sem reverse). Default: false */
   once?: boolean;
   /** Threshold do IntersectionObserver. Default: 0.15 */

@@ -154,6 +154,37 @@ body {
 }
 
 /* ==========================================
+   Prose elegante — usado em narrativa longa (Historia)
+   ========================================== */
+.prose-elegant {
+  font-size: 1.0625rem;
+  line-height: 1.85;
+  color: #3a3a3a;
+}
+.prose-elegant p {
+  margin-bottom: 1.25rem;
+}
+.prose-elegant p:last-child {
+  margin-bottom: 0;
+}
+.prose-elegant strong {
+  color: #2D1E0F;
+  font-weight: 600;
+}
+.prose-elegant em {
+  color: #8B4F23;
+}
+.prose-dark {
+  color: rgba(255, 255, 255, 0.82);
+}
+.prose-dark strong {
+  color: #ffffff;
+}
+.prose-dark em {
+  color: #E0B13C;
+}
+
+/* ==========================================
    Glow pulsante em CTAs principais
    ========================================== */
 .btn-glow {

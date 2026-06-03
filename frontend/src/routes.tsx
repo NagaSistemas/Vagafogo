@@ -5,11 +5,16 @@ import { Admin } from "./pages/Admin"
 import { ProtectedRoute } from "./components/ProtectedRoute"
 import { Reserva } from "./pages/Reserva"
 import { MinhaReserva } from "./pages/MinhaReserva"
+import { Historia } from "./pages/Historia"
 
 export const router = createBrowserRouter([
   {
     path: "/",
     element: <Home />
+  },
+  {
+    path: "/historia",
+    element: <Historia />
   },
   {
     path: "/reservar",

@@ -2,11 +2,14 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import logo from "../assets/logo.jpg";
 
-const NAV_LINKS = [
-  { href: "#inicio", label: "Início" },
-  { href: "#brunch", label: "Brunch" },
-  { href: "#trilha", label: "Trilha" },
-  { href: "#educacao", label: "Educação" },
+type NavLink = { href: string; label: string; type: "anchor" | "route" };
+
+const NAV_LINKS: NavLink[] = [
+  { href: "/#inicio", label: "Início", type: "anchor" },
+  { href: "/#brunch", label: "Brunch", type: "anchor" },
+  { href: "/#trilha", label: "Trilha", type: "anchor" },
+  { href: "/#educacao", label: "Educação", type: "anchor" },
+  { href: "/historia", label: "História", type: "route" },
 ];
 
 export default function Header() {
@@ -56,21 +59,24 @@ export default function Header() {
 
         {/* Nav Desktop */}
         <nav className="hidden lg:flex flex-1 justify-center gap-8">
-          {NAV_LINKS.map(({ href, label }) => (
-            <a
-              key={href}
-              href={href}
-              className={`relative font-medium text-base py-1 transition-colors duration-500
+          {NAV_LINKS.map(({ href, label, type }) => {
+            const classes = `relative font-medium text-base py-1 transition-colors duration-500
                 after:absolute after:bottom-0 after:left-0 after:w-0 after:h-0.5
                 after:transition-all after:duration-300 hover:after:w-full ${
                 transparente
                   ? "text-white/90 hover:text-white after:bg-white drop-shadow-sm"
                   : "text-[#8B4F23] after:bg-[#8B4F23]"
-              }`}
-            >
-              {label}
-            </a>
-          ))}
+              }`;
+            return type === "route" ? (
+              <Link key={href} to={href} className={classes}>
+                {label}
+              </Link>
+            ) : (
+              <a key={href} href={href} className={classes}>
+                {label}
+              </a>
+            );
+          })}
         </nav>
 
         {/* Botões Desktop */}
@@ -131,16 +137,18 @@ export default function Header() {
         menuAberto ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
       }`}>
         <div className="bg-white/97 backdrop-blur-md border-t border-[#8B4F23]/10 px-4 py-4 flex flex-col gap-1">
-          {NAV_LINKS.map(({ href, label }) => (
-            <a
-              key={href}
-              href={href}
-              onClick={fecharMenu}
-              className="py-3 px-3 text-base font-medium text-[#8B4F23] rounded-lg hover:bg-[#8B4F23]/5 border-b border-[#8B4F23]/5 transition-colors"
-            >
-              {label}
-            </a>
-          ))}
+          {NAV_LINKS.map(({ href, label, type }) => {
+            const mobileClass = "py-3 px-3 text-base font-medium text-[#8B4F23] rounded-lg hover:bg-[#8B4F23]/5 border-b border-[#8B4F23]/5 transition-colors";
+            return type === "route" ? (
+              <Link key={href} to={href} onClick={fecharMenu} className={mobileClass}>
+                {label}
+              </Link>
+            ) : (
+              <a key={href} href={href} onClick={fecharMenu} className={mobileClass}>
+                {label}
+              </a>
+            );
+          })}
           <Link
             to="/minha-reserva"
             onClick={fecharMenu}
