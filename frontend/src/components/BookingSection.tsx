@@ -73,6 +73,8 @@ type Pacote = {
   horarioInicio?: string;
   horarioFim?: string;
   perguntasPersonalizadas?: PerguntaPersonalizada[];
+  /** Aviso exibido na escolha do horário do pacote (ex: "Chegar 15 min antes") */
+  aviso?: string;
 };
 
 type Combo = {
@@ -388,6 +390,11 @@ export function BookingSection() {
   const [cpf, setCpf] = useState<string>("");
   const [selectedDay, setSelectedDay] = useState<Date | undefined>();
   const [horario, setHorario] = useState<string>("");
+  // Horário por pacote — cada pacote pode ter seu próprio horário.
+  // Mantém `horario` legado sincronizado com o primeiro horário escolhido.
+  const [horariosPorPacote, setHorariosPorPacote] = useState<Record<string, string>>({});
+  // Sub-etapa dentro do passo de pagamento: escolha do método ou formulário
+  const [subEtapaPagamento, setSubEtapaPagamento] = useState<"metodo" | "form">("metodo");
   const [diasBloqueados, setDiasBloqueados] = useState<Set<string>>(new Set());
   const [diaSelecionadoFechado, setDiaSelecionadoFechado] = useState(false);
   const [participantesPorTipo, setParticipantesPorTipo] = useState<TipoClienteQuantidade>({});
@@ -475,6 +482,8 @@ export function BookingSection() {
     setCpf("");
     setSelectedDay(undefined);
     setHorario("");
+    setHorariosPorPacote({});
+    setSubEtapaPagamento("metodo");
     setParticipantesPorTipo({});
     setTemPet(null);
     setCheckoutUrl(null);
@@ -1599,10 +1608,10 @@ export function BookingSection() {
   ] as const;
 
   const etapaParaCampo = (campo: string): EtapaReserva => {
-    if (campo === "pacotes") return 0;
-    if (["data", "horario"].includes(campo)) return 1;
-    if (["participantes", "pet"].includes(campo)) return 2;
-    if (campo === "perguntas") return 3;
+    if (campo === "data") return 0;
+    if (campo === "pacotes") return 1;
+    if (["horario", "perguntas"].includes(campo)) return 2;
+    if (["participantes", "pet"].includes(campo)) return 3;
     return 4;
   };
 
@@ -1619,21 +1628,24 @@ export function BookingSection() {
   const getErrorsAteEtapa = (ateEtapa: EtapaReserva) => {
     const errors: Record<string, string> = {};
 
+    // Etapa 0: Data
     if (ateEtapa >= 0) {
+      if (!selectedDay) {
+        errors.data = "Selecione uma data disponível.";
+      } else if (diaSelecionadoFechado) {
+        errors.data = "Esta data está indisponível. Escolha outra.";
+      }
+    }
+
+    // Etapa 1: Pacotes
+    if (ateEtapa >= 1) {
       if (selectedPackages.length === 0) {
         errors.pacotes = "Selecione pelo menos um pacote.";
       }
     }
 
-    if (ateEtapa >= 1) {
-      if (selectedPackages.length > 0) {
-        if (!selectedDay) {
-          errors.data = "Selecione uma data disponível.";
-        } else if (diaSelecionadoFechado) {
-          errors.data = "Esta data está indisponível. Escolha outra.";
-        }
-      }
-
+    // Etapa 2: Horário (de cada pacote) + perguntas personalizadas
+    if (ateEtapa >= 2) {
       const haHorariosVisiveis = horariosVisiveis.length > 0;
       const haHorariosComVagas = horariosComVagas.length > 0;
       const haHorariosDisponiveis = horariosDisponiveis.length > 0;
@@ -1658,8 +1670,10 @@ export function BookingSection() {
           errors.horario = "Nenhum horário configurado para esta data. Escolha outra data.";
         }
       }
+    }
 
-      if (ateEtapa >= 2) {
+    // Etapa 3: Participantes + pet
+    if (ateEtapa >= 3) {
       const totalParticipantes = totalParticipantesSelecionados;
       if (totalParticipantes <= 0) {
         errors.participantes = "Informe a quantidade de participantes.";
@@ -1690,7 +1704,6 @@ export function BookingSection() {
 
       if (temPet === null) {
         errors.pet = "Informe se vai levar pet.";
-      }
       }
     }
 
@@ -1770,32 +1783,43 @@ export function BookingSection() {
 
   const wizardSteps = [
     {
-      title: "Atividades",
-      description: "Escolha os pacotes e/ou combos.",
+      title: "Data",
+      description: "Escolha o dia da sua visita.",
     },
     {
-      title: "Data e Horário",
-      description: "Escolha o dia e horário da visita.",
+      title: "Pacotes",
+      description: "Escolha as atividades para esse dia.",
+    },
+    {
+      title: "Horários",
+      description: "Escolha o horário e responda as perguntas de cada pacote.",
     },
     {
       title: "Participantes",
-      description: "Informe participantes e se levará pet.",
+      description: "Informe quantos vão e se levará pet.",
     },
     {
-      title: "Perguntas",
-      description: "Responda as informações adicionais.",
-    },
-    {
-      title: "Resumo e Pagamento",
-      description: "Revise tudo, escolha pagamento e finalize.",
+      title: "Pagamento",
+      description: "Revise, escolha como pagar e finalize.",
     },
   ] as const;
 
   const handleVoltarEtapa = () => {
+    // Se está no formulário de pagamento, volta pro seletor de método antes de sair da etapa 4
+    if (etapa === 4 && subEtapaPagamento === "form") {
+      setSubEtapaPagamento("metodo");
+      return;
+    }
     setEtapa((prev) => (prev > 0 ? ((prev - 1) as EtapaReserva) : prev));
   };
 
   const handleAvancarEtapa = () => {
+    // Se está escolhendo método, avança pro formulário (sem sair da etapa 4)
+    if (etapa === 4 && subEtapaPagamento === "metodo") {
+      setSubEtapaPagamento("form");
+      return;
+    }
+
     if (etapa === 0) {
       const validation = validateForm(0);
       if (!validation.ok) {
@@ -1822,6 +1846,12 @@ export function BookingSection() {
         setEtapa(etapaParaPrimeiroErro(validation.errors));
         return;
       }
+      // Perguntas agora estão na etapa 2 (cards por pacote)
+      const { erro } = montarRespostasPersonalizadas();
+      if (erro) {
+        alert(erro);
+        return;
+      }
       setEtapa(3);
       return;
     }
@@ -1832,14 +1862,9 @@ export function BookingSection() {
         setEtapa(etapaParaPrimeiroErro(validation.errors));
         return;
       }
-
-      const { erro } = montarRespostasPersonalizadas();
-      if (erro) {
-        alert(erro);
-        return;
-      }
-
       setEtapa(4);
+      // Reset sub-passo de pagamento ao entrar
+      setSubEtapaPagamento("metodo");
     }
   };
 
@@ -2262,7 +2287,7 @@ export function BookingSection() {
               <form
                 onSubmit={handleSubmit}
                 noValidate
-                className="rounded-2xl sm:rounded-3xl border border-slate-200 bg-white p-4 shadow-xl sm:p-7 md:p-8"
+                className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-[#FAF7F2] p-4 shadow-2xl shadow-[#8B4F23]/5 sm:p-7 md:p-8 relative overflow-hidden"
               >
                 <div className="mb-6 sm:mb-8">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
@@ -2334,7 +2359,45 @@ export function BookingSection() {
                   </div>
                 </div>
 
+                {/* ============ ETAPA 0 — DATA ============ */}
                 {etapa === 0 && (
+                  <div className="mb-6">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                      Quando você quer vir?<span className="text-red-500 ml-0.5">*</span>
+                    </label>
+                    <div ref={dataRef} className="flex justify-center">
+                      <DayPicker
+                        mode="single"
+                        selected={selectedDay}
+                        onSelect={handleDaySelect}
+                        disabled={[{ before: todayStart }, (day) => !hasDisponibilidadeNoDia(day)]}
+                        locale={ptBR}
+                        className="rdp-vagafogo border border-slate-200 rounded-2xl p-4 shadow-sm bg-white"
+                        modifiers={{
+                          blocked: (day) => isBlockedDay(day)
+                        }}
+                        modifiersStyles={{
+                          blocked: {
+                            backgroundColor: '#fee2e2',
+                            color: '#dc2626',
+                            textDecoration: 'line-through'
+                          }
+                        }}
+                      />
+                    </div>
+                    {selectedDay && (
+                      <p className="mt-3 text-center text-sm text-emerald-700 font-medium">
+                        Data escolhida: {selectedDay.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}
+                      </p>
+                    )}
+                    {formErrors.data && (
+                      <p className="mt-2 text-center text-sm text-red-600">{formErrors.data}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* ============ ETAPA 1 — PACOTES ============ */}
+                {etapa === 1 && (
                   <>
                     {combos.length > 0 && (
               <div className="mb-6">
@@ -2360,12 +2423,12 @@ export function BookingSection() {
                         type="button"
                         disabled={desabilitado}
                         onClick={() => handleSelectCombo(combo)}
-                        className={`rounded-2xl border-2 p-4 text-left transition-all duration-200 ${
+                        className={`rounded-2xl border-2 p-4 text-left transition-all duration-300 ${
                           desabilitado
                             ? "border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed opacity-60"
                             : ativo
-                             ? "border-[#8B4F23] bg-[#8B4F23]/5 shadow-md"
-                             : "border-slate-200 bg-white hover:border-[#8B4F23]/40 hover:shadow-sm"
+                             ? "border-[#E0B13C] bg-gradient-to-br from-[#E0B13C]/10 via-white to-[#8B4F23]/5 shadow-lg shadow-[#E0B13C]/15 scale-[1.01]"
+                             : "border-slate-200 bg-white hover:border-[#E0B13C]/50 hover:shadow-md hover:-translate-y-0.5"
                         }`}
                       >
                         <div className="flex flex-col gap-2">
@@ -2425,12 +2488,12 @@ export function BookingSection() {
                     <div
                       key={pacote.id}
                       aria-disabled={desabilitado}
-                      className={`rounded-2xl border-2 p-5 transition-all duration-200 ${
+                      className={`relative rounded-2xl border-2 p-5 transition-all duration-300 ${
                         desabilitado
                           ? "border-slate-100 bg-slate-50 opacity-60 cursor-not-allowed"
                           : selecionado
-                          ? "border-[#8B4F23] bg-[#8B4F23]/5 cursor-pointer shadow-md"
-                          : "border-slate-200 bg-white hover:border-[#8B4F23]/40 hover:shadow-sm cursor-pointer"
+                          ? "border-[#8B4F23] bg-gradient-to-br from-[#8B4F23]/8 via-white to-[#E0B13C]/8 cursor-pointer shadow-lg shadow-[#8B4F23]/10 scale-[1.01]"
+                          : "border-slate-200 bg-white hover:border-[#8B4F23]/40 hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
                       }`}
                       onClick={() => {
                         if (desabilitado) return;
@@ -2501,152 +2564,204 @@ export function BookingSection() {
                   </>
                 )}
 
-                {etapa === 1 && (
-                  <>
-                    {/* Selecao de Data */}
-                    {selectedPackages.length > 0 && (
-              <div className="mb-6">
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                  Selecione a Data <span className="text-red-500">*</span>
-                </label>
-                <div ref={dataRef} className="flex justify-center">
-                  <DayPicker
-                    mode="single"
-                    selected={selectedDay}
-                    onSelect={handleDaySelect}
-                    disabled={[{ before: todayStart }, (day) => !hasDisponibilidadeNoDia(day)]}
-                    locale={ptBR}
-                    className="rdp-vagafogo border border-slate-200 rounded-2xl p-4 shadow-sm bg-white"
-                    modifiers={{
-                      blocked: (day) => isBlockedDay(day)
-                    }}
-                    modifiersStyles={{
-                      blocked: {
-                        backgroundColor: '#fee2e2',
-                        color: '#dc2626',
-                        textDecoration: 'line-through'
-                      }
-                    }}
-                  />
-                </div>
-                {formErrors.data && (
-                  <p className="mt-2 text-sm text-red-600">{formErrors.data}</p>
-                )}
-              </div>
-            )}
-
-            {/* Selecao de Horario */}
-            {selectedDay && selectedPacotes.length > 0 && (
-              <div ref={horarioRef} className="mb-6">
-                {diaSelecionadoFechado ? (
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-700">
-                      Este dia esta fechado para todos os pacotes. Escolha outra data para continuar.
-                    </p>
-                  </div>
-                ) : horariosVisiveis.length > 0 ? (
-                  <>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                      Horário <span className="text-red-500">*</span>
-                    </label>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                      {horariosVisiveis.map((h) => {
-                        const restante = vagasRestantesPorHorario[h];
-                        const restanteExibicao =
-                          typeof restante === "number" ? Math.max(restante, 0) : null;
-                        const lotado = typeof restante === "number" && restante <= 0;
-                        const insuficiente =
-                          !lotado &&
-                          typeof restante === "number" &&
-                          totalParticipantesSelecionados > Math.max(restante, 0);
-                        const desabilitado = lotado || insuficiente;
-                        const selecionado = horario === h;
-                        const base =
-                          "flex flex-col items-center justify-center rounded-xl border px-3 py-3 text-sm font-medium transition-all duration-200";
-                        const estado = lotado
-                          ? "border-red-200 bg-red-50 text-red-500 cursor-not-allowed opacity-70"
-                          : insuficiente
-                          ? "border-amber-200 bg-amber-50 text-amber-700 cursor-not-allowed"
-                          : selecionado
-                          ? "border-[#8B4F23] bg-[#8B4F23] text-white shadow-md"
-                          : "border-slate-200 text-slate-700 hover:border-[#8B4F23] hover:bg-[#8B4F23]/5 hover:text-[#8B4F23]";
-                        const detalhe = lotado
-                          ? "text-red-500"
-                          : insuficiente
-                          ? "text-yellow-700"
-                          : "text-gray-500";
-                        const textoVagas =
-                          restanteExibicao === null
-                            ? "Sem limite de vagas"
-                            : lotado
-                            ? "Esgotado"
-                            : insuficiente
-                            ? `Insuficiente (${restanteExibicao} vaga(s))`
-                            : `${restanteExibicao} vaga(s)`;
-
-                        return (
-                          <button
-                            key={h}
-                            type="button"
-                            disabled={desabilitado}
-                            onClick={() => {
-                              setHorario(h);
-                              setFieldError("horario");
-                            }}
-                            className={`${base} ${estado}`}
-                          >
-                            <span className="text-base">{h}</span>
-                            <span className={`text-xs ${detalhe}`}>{textoVagas}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {horariosComVagas.length > 0 && horariosDisponiveis.length === 0 && (
-                      <p className="mt-2 text-sm text-yellow-700">
-                        Nenhum horário comporta {totalParticipantesSelecionados} participante(s). Reduza a quantidade ou escolha outra data.
-                      </p>
-                    )}
-                    {temPacoteFaixa && (
-                      <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                        {selectedPacotes
-                          .filter(p => p.modoHorario === 'intervalo' && p.horarioInicio && p.horarioFim)
-                          .map(p => (
-                            <p key={p.id} className="text-sm text-blue-700 mb-1 last:mb-0">
-                              A atividade {p.nome} funciona em faixa de horario, ocorre das {p.horarioInicio} ate {p.horarioFim}
-                            </p>
-                          ))
-                        }
-                      </div>
-                    )}
-                  </>
-                ) : temPacoteFaixa ? (
-                  <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                    {selectedPacotes
-                      .filter(p => p.modoHorario === 'intervalo' && p.horarioInicio && p.horarioFim)
-                      .map(p => (
-                        <p key={p.id} className="text-sm font-medium text-green-700 mb-1 last:mb-0">
-                          A atividade {p.nome} funciona em faixa de horario, ocorre das {p.horarioInicio} ate {p.horarioFim}
-                        </p>
-                      ))
-                    }
-                  </div>
-                ) : (
-                  <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
-                    <p className="text-sm text-red-700">
-                      Nenhum horario disponivel para os pacotes selecionados nesta data. Escolha outra data ou ajuste os pacotes.
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-            {formErrors.horario && !diaSelecionadoFechado && (
-              <p className="mt-2 text-sm text-red-600">{formErrors.horario}</p>
-            )}
-
-                  </>
-                )}
-
+                {/* ============ ETAPA 2 — HORÁRIO + PERGUNTAS POR PACOTE ============ */}
                 {etapa === 2 && (
+                  <div ref={horarioRef} className="space-y-5">
+                    {diaSelecionadoFechado ? (
+                      <div className="p-4 bg-red-50 border border-red-200 rounded-lg">
+                        <p className="text-sm text-red-700">
+                          Este dia esta fechado para todos os pacotes. Volte e escolha outra data.
+                        </p>
+                      </div>
+                    ) : (
+                      selectedPacotes.map((pacote, idxPacote) => {
+                        const ehFaixa = pacote.modoHorario === "intervalo";
+                        const horariosPacote = (pacote.horarios ?? []).filter((h) =>
+                          horariosVisiveis.includes(h)
+                        );
+                        const temHorariosVisiveis = horariosPacote.length > 0;
+                        const horarioPacote = horariosPorPacote[pacote.id!] ?? "";
+                        const aviso = pacote.aviso;
+                        return (
+                          <div
+                            key={pacote.id}
+                            className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-white to-[#FAF7F2] p-5 shadow-sm hover:shadow-md transition-shadow"
+                          >
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                              <div>
+                                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#8B4F23]/70">
+                                  Pacote {idxPacote + 1} de {selectedPacotes.length}
+                                </p>
+                                <h3 className="mt-1 text-base font-bold text-[#2D1E0F] flex items-center gap-2">
+                                  <span>{pacote.emoji}</span>
+                                  <span>{pacote.nome}</span>
+                                </h3>
+                              </div>
+                              {horarioPacote && (
+                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                                  {horarioPacote}
+                                </span>
+                              )}
+                            </div>
+
+                            {aviso && aviso.trim() && (
+                              <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 flex items-start gap-2.5">
+                                <svg className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2L1 21h22L12 2zm0 4l7.53 13H4.47L12 6zm-1 5v4h2v-4h-2zm0 6v2h2v-2h-2z"/></svg>
+                                <p className="text-xs text-amber-900 leading-relaxed">
+                                  <strong className="font-semibold">Atenção:</strong> {aviso}
+                                </p>
+                              </div>
+                            )}
+
+                            {ehFaixa ? (
+                              <div className="rounded-xl bg-blue-50 border border-blue-200 px-3.5 py-3">
+                                <p className="text-xs text-blue-800">
+                                  Funciona em <strong>faixa de horário</strong>, das {pacote.horarioInicio} às {pacote.horarioFim}.
+                                </p>
+                              </div>
+                            ) : temHorariosVisiveis ? (
+                              <>
+                                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2.5">
+                                  Escolha o horário
+                                </p>
+                                <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                                  {horariosPacote.map((h) => {
+                                    const restante = vagasRestantesPorHorario[h];
+                                    const restanteExibicao =
+                                      typeof restante === "number" ? Math.max(restante, 0) : null;
+                                    const lotado = typeof restante === "number" && restante <= 0;
+                                    const selecionado = horarioPacote === h;
+                                    const estado = lotado
+                                      ? "border-red-200 bg-red-50 text-red-500 cursor-not-allowed opacity-70"
+                                      : selecionado
+                                      ? "border-[#8B4F23] bg-gradient-to-br from-[#8B4F23] to-[#A05D2B] text-white shadow-md scale-[1.02]"
+                                      : "border-slate-200 bg-white text-slate-700 hover:border-[#8B4F23] hover:bg-[#8B4F23]/5 hover:scale-[1.02]";
+                                    const textoVagas = restanteExibicao === null
+                                      ? "Sem limite"
+                                      : lotado ? "Esgotado" : `${restanteExibicao} vaga(s)`;
+                                    return (
+                                      <button
+                                        key={h}
+                                        type="button"
+                                        disabled={lotado}
+                                        onClick={() => {
+                                          setHorariosPorPacote((prev) => ({ ...prev, [pacote.id!]: h }));
+                                          setHorario(h);
+                                          setFieldError("horario");
+                                        }}
+                                        className={`flex flex-col items-center justify-center rounded-xl border-2 px-2.5 py-2.5 text-sm font-medium transition-all duration-200 ${estado}`}
+                                      >
+                                        <span className="text-base font-semibold">{h}</span>
+                                        <span className={`text-[10px] mt-0.5 ${selecionado ? "text-white/90" : "text-slate-500"}`}>{textoVagas}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </>
+                            ) : (
+                              <div className="rounded-xl bg-red-50 border border-red-200 px-3.5 py-3">
+                                <p className="text-xs text-red-700">
+                                  Nenhum horário disponível para este pacote nesta data.
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Perguntas personalizadas do pacote */}
+                            {pacote.perguntasPersonalizadas && pacote.perguntasPersonalizadas.length > 0 && (
+                              <div className="mt-5 pt-5 border-t border-slate-100 space-y-4">
+                                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                                  Informações adicionais
+                                </p>
+                                {pacote.perguntasPersonalizadas.map((pergunta) => {
+                                  const chave = `${pacote.id}-${pergunta.id}`;
+                                  const respostaBase = respostasPersonalizadas[chave]?.resposta ?? "";
+                                  const respostaCondicional = respostasPersonalizadas[chave]?.condicional ?? "";
+                                  const cond = pergunta.perguntaCondicional;
+                                  const mostrarCondicional = cond && respostaBase === cond.condicao;
+                                  return (
+                                    <div key={pergunta.id}>
+                                      <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                        {pergunta.pergunta}
+                                        {pergunta.obrigatoria && <span className="text-red-500 ml-1">*</span>}
+                                      </label>
+                                      {pergunta.tipo === "sim_nao" ? (
+                                        <div className="flex gap-2">
+                                          {["sim", "nao"].map((opcao) => (
+                                            <button
+                                              key={opcao}
+                                              type="button"
+                                              onClick={() => atualizarRespostaBase(chave, opcao, cond?.condicao)}
+                                              className={`flex-1 rounded-xl border-2 px-4 py-2.5 text-sm font-medium transition-all ${
+                                                respostaBase === opcao
+                                                  ? "border-[#8B4F23] bg-[#8B4F23] text-white shadow"
+                                                  : "border-slate-200 bg-white text-slate-700 hover:border-[#8B4F23]/40"
+                                              }`}
+                                            >
+                                              {opcao === "sim" ? "Sim" : "Não"}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          value={respostaBase}
+                                          onChange={(e) => atualizarRespostaBase(chave, e.target.value, cond?.condicao, true)}
+                                          className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#8B4F23]/20 focus:border-[#8B4F23]"
+                                          placeholder="Sua resposta"
+                                        />
+                                      )}
+                                      {mostrarCondicional && cond && (
+                                        <div className="mt-3 pl-4 border-l-2 border-[#8B4F23]/30">
+                                          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                                            {cond.pergunta}
+                                            {cond.obrigatoria && <span className="text-red-500 ml-1">*</span>}
+                                          </label>
+                                          {cond.tipo === "sim_nao" ? (
+                                            <div className="flex gap-2">
+                                              {["sim", "nao"].map((opcao) => (
+                                                <button
+                                                  key={opcao}
+                                                  type="button"
+                                                  onClick={() => atualizarRespostaCondicional(chave, opcao)}
+                                                  className={`flex-1 rounded-xl border-2 px-4 py-2.5 text-sm font-medium transition-all ${
+                                                    respostaCondicional === opcao
+                                                      ? "border-[#8B4F23] bg-[#8B4F23] text-white shadow"
+                                                      : "border-slate-200 bg-white text-slate-700 hover:border-[#8B4F23]/40"
+                                                  }`}
+                                                >
+                                                  {opcao === "sim" ? "Sim" : "Não"}
+                                                </button>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <input
+                                              type="text"
+                                              value={respostaCondicional}
+                                              onChange={(e) => atualizarRespostaCondicional(chave, e.target.value, true)}
+                                              className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#8B4F23]/20 focus:border-[#8B4F23]"
+                                              placeholder="Sua resposta"
+                                            />
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                    {formErrors.horario && !diaSelecionadoFechado && (
+                      <p className="text-sm text-red-600">{formErrors.horario}</p>
+                    )}
+                  </div>
+                )}
+
+                {/* ============ ETAPA 3 — PARTICIPANTES ============ */}
+                {etapa === 3 && (
                   <>
 
             {/* Numero de Participantes */}
@@ -2809,7 +2924,8 @@ export function BookingSection() {
                   </>
                 )}
 
-                {etapa === 3 && (
+                {/* Perguntas legacy removidas — agora aparecem nos cards da etapa 2 */}
+                {false && (
                   <>
 
             {/* Perguntas Personalizadas */}
@@ -2964,7 +3080,67 @@ export function BookingSection() {
                   </>
                 )}
 
-                {etapa === 4 && (
+                {/* ============ ETAPA 4 — MÉTODO + PAGAMENTO ============ */}
+                {etapa === 4 && subEtapaPagamento === "metodo" && (
+                  <div className="space-y-5">
+                    <div className="text-center mb-3">
+                      <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#8B4F23]/70 mb-1">Falta pouco</p>
+                      <h3 className="text-xl font-bold text-[#2D1E0F]">Como você prefere pagar?</h3>
+                      <p className="text-sm text-slate-500 mt-1">Escolha um método para continuar.</p>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {[
+                        { id: "PIX", label: "PIX", desc: "Confirmação instantânea", icon: "⚡" },
+                        { id: "CREDIT_CARD", label: "Cartão de crédito", desc: "Parcele em até 12x", icon: "💳" },
+                      ].map((m) => {
+                        const ativo = formaPagamento === (m.id as "PIX" | "CREDIT_CARD");
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setFormaPagamento(m.id as "PIX" | "CREDIT_CARD")}
+                            className={`group relative rounded-2xl border-2 p-5 text-left transition-all duration-200 ${
+                              ativo
+                                ? "border-[#8B4F23] bg-gradient-to-br from-[#8B4F23]/8 to-[#E0B13C]/8 shadow-md"
+                                : "border-slate-200 bg-white hover:border-[#8B4F23]/40 hover:shadow-sm"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-center gap-3">
+                                <span className="text-3xl">{m.icon}</span>
+                                <div>
+                                  <p className="text-sm font-bold text-[#2D1E0F]">{m.label}</p>
+                                  <p className="text-xs text-slate-500 mt-0.5">{m.desc}</p>
+                                </div>
+                              </div>
+                              <span className={`w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                                ativo ? "border-[#8B4F23] bg-[#8B4F23]" : "border-slate-300 bg-white"
+                              }`}>
+                                {ativo && (
+                                  <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                  </svg>
+                                )}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 flex items-start gap-3">
+                      <svg className="w-5 h-5 text-slate-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                      <p className="text-xs text-slate-600 leading-relaxed">
+                        Pagamento seguro pela <strong>Asaas</strong>. Seus dados de cartão não são armazenados.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {etapa === 4 && subEtapaPagamento === "form" && (
                   <>
                     {/* Dados Pessoais */}
                     <div className="mb-6">
@@ -3358,8 +3534,77 @@ export function BookingSection() {
                 </div>
           </form>
 
+          {/* ============ RESERVA CONFIRMADA — RESUMO FINAL ============ */}
+          {cartaoResultado?.status === "success" && (
+            <div className="mt-8 rounded-3xl border border-emerald-200 bg-gradient-to-br from-white via-emerald-50/40 to-emerald-100/30 p-6 sm:p-10 shadow-xl overflow-hidden relative">
+              <div className="pointer-events-none absolute -top-20 -right-20 w-64 h-64 rounded-full bg-emerald-400/15 blur-3xl" />
+              <div className="pointer-events-none absolute -bottom-20 -left-20 w-64 h-64 rounded-full bg-[#E0B13C]/15 blur-3xl" />
+
+              <div className="relative text-center mb-6">
+                <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg mb-3 animate-bounce">
+                  <svg className="w-9 h-9 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.3em] text-emerald-700 mb-1">Reserva confirmada</p>
+                <h3 className="font-display text-2xl sm:text-3xl font-bold text-[#2D1E0F]">
+                  Nos vemos em breve, {nome.split(" ")[0] || "visitante"}!
+                </h3>
+                <p className="mt-2 text-sm text-slate-600 max-w-md mx-auto">
+                  Enviamos a confirmação para <strong className="text-[#8B4F23]">{email}</strong>. Guarde esses detalhes:
+                </p>
+              </div>
+
+              <div className="relative grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto mb-6">
+                {[
+                  { label: "Data", value: selectedDay ? selectedDay.toLocaleDateString("pt-BR") : "—" },
+                  { label: "Horário", value: horario || "—" },
+                  { label: "Pessoas", value: String(totalParticipantesSelecionados) },
+                  { label: "Valor", value: formatCurrency(calcularTotal()) },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-xl bg-white/80 backdrop-blur-sm border border-emerald-100 p-3 text-center shadow-sm">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{item.label}</p>
+                    <p className="text-sm font-bold text-[#2D1E0F] mt-1">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {pacotesResumo.length > 0 && (
+                <div className="relative max-w-3xl mx-auto mb-6 rounded-2xl bg-white/70 backdrop-blur-sm border border-emerald-100 p-4">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Atividades</p>
+                  <div className="flex flex-wrap gap-2">
+                    {pacotesResumo.map((nomePacote) => (
+                      <span key={nomePacote} className="inline-flex items-center gap-1.5 rounded-full bg-[#8B4F23]/10 text-[#8B4F23] px-3 py-1 text-xs font-medium border border-[#8B4F23]/15">
+                        {nomePacote}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="relative flex flex-col sm:flex-row gap-3 justify-center max-w-md mx-auto">
+                <a
+                  href="/minha-reserva"
+                  className="inline-flex items-center justify-center gap-2 bg-[#8B4F23] text-white font-semibold px-6 py-3 rounded-full shadow-md hover:bg-[#A05D2B] transition-all duration-300 hover:shadow-lg text-sm whitespace-nowrap"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  Consultar reserva
+                </a>
+                <button
+                  type="button"
+                  onClick={resetFormulario}
+                  className="inline-flex items-center justify-center gap-2 border border-[#8B4F23]/20 bg-white text-[#8B4F23] font-medium px-6 py-3 rounded-full hover:bg-[#8B4F23]/5 hover:border-[#8B4F23]/40 transition-all duration-300 text-sm whitespace-nowrap"
+                >
+                  Fazer nova reserva
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Resultado do Pagamento */}
-          {(checkoutUrl || pixKey || cartaoResultado) && (
+          {cartaoResultado?.status !== "success" && (checkoutUrl || pixKey || cartaoResultado) && (
             <div
               ref={paymentCardRef}
               className="relative mt-8 overflow-hidden rounded-3xl p-5 shadow-2xl sm:p-8"
@@ -3470,18 +3715,14 @@ export function BookingSection() {
                   </p>
                   <span
                     className={`inline-flex items-center justify-center rounded-full px-4 py-2 text-sm font-semibold ${
-                      cartaoResultado.status === "success"
-                        ? "bg-emerald-500/20 text-emerald-100"
-                        : cartaoResultado.status === "processing"
+                      cartaoResultado.status === "processing"
                         ? "bg-sky-500/20 text-sky-100"
                         : cartaoResultado.status === "pending"
                         ? "bg-amber-500/20 text-amber-100"
                         : "bg-rose-500/20 text-rose-100"
                     }`}
                   >
-                    {cartaoResultado.status === "success"
-                      ? "Pagamento confirmado"
-                      : cartaoResultado.status === "processing"
+                    {cartaoResultado.status === "processing"
                       ? "Processando compra"
                       : cartaoResultado.status === "pending"
                       ? "Pagamento em processamento"

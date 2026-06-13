@@ -283,6 +283,8 @@ interface Pacote {
 
   perguntasPersonalizadas?: PerguntaPersonalizada[];
 
+  aviso?: string;
+
 }
 
 
@@ -5775,6 +5777,8 @@ const totalParticipantesDoDia = useMemo(() => {
       horarios: horariosCalculados,
 
       aceitaPet: editPacote.aceitaPet ?? true,
+
+      aviso: (editPacote.aviso ?? '').trim(),
 
     };
 
@@ -11589,6 +11593,24 @@ const totalParticipantesDoDia = useMemo(() => {
                       </label>
 
                     </div>
+
+                  </div>
+
+                  <div className="text-xs font-semibold uppercase text-slate-500 md:col-span-2">
+
+                    Aviso para o cliente (opcional)
+
+                    <textarea
+                      value={editPacote.aviso ?? ''}
+                      onChange={(e) => setEditPacote((f) => ({ ...f!, aviso: e.target.value }))}
+                      placeholder="Ex: Chegar 15 minutos antes do horário. Levar protetor solar."
+                      rows={2}
+                      className="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 font-normal normal-case tracking-normal focus:outline-none focus:ring-2 focus:ring-[#8B4F23]/20 focus:border-[#8B4F23]"
+                    />
+
+                    <p className="mt-1 text-xs font-normal normal-case tracking-normal text-slate-400">
+                      Aparece em destaque quando o cliente escolhe o horário desse pacote.
+                    </p>
 
                   </div>
 
