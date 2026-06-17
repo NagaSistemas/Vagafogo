@@ -276,6 +276,22 @@ body {
 /* ==========================================
    DayPicker – Cores da marca Vagafogo
    ========================================== */
+/* Garantir centralização do conteúdo interno (mês, cabeçalho, grid de dias) */
+.rdp-vagafogo {
+  margin: 0 auto;
+  display: inline-block;
+}
+.rdp-vagafogo .rdp-months,
+.rdp-vagafogo .rdp-month {
+  margin: 0 auto;
+}
+.rdp-vagafogo .rdp-table {
+  margin: 0 auto;
+}
+.rdp-vagafogo .rdp-caption {
+  justify-content: space-between;
+}
+
 .rdp-vagafogo .rdp-day_selected:not(.rdp-day_disabled),
 .rdp-vagafogo .rdp-day_selected:not(.rdp-day_disabled):hover {
   background-color: #8B4F23 !important;
