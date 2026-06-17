@@ -1498,12 +1498,9 @@ export function BookingSection() {
   };
 
   const hasDisponibilidadeNoDia = (day: Date) => {
-    // Na etapa Data (etapa 0) o cliente ainda nao escolheu pacotes,
-    // entao avaliamos contra TODOS os pacotes (uniao). Se ja escolheu,
-    // restringimos aos selecionados.
-    const pacotesParaAvaliar = selectedPacotes.length > 0 ? selectedPacotes : pacotes;
-    if (pacotesParaAvaliar.length === 0) return false;
-
+    // Cliente escolhe pacotes ANTES da data (etapa 0 -> 1),
+    // entao filtra apenas pelos pacotes selecionados (precisam estar TODOS disponiveis).
+    if (selectedPacotes.length === 0) return false;
     const dayStr = day.toISOString().slice(0, 10);
     if (diasBloqueados.has(dayStr)) return false;
 
@@ -1515,7 +1512,9 @@ export function BookingSection() {
       day.getDate() === hoje.getDate();
     const minutosAgora = ehHoje ? hoje.getHours() * 60 + hoje.getMinutes() : -1;
 
-    return pacotesParaAvaliar.some((pacote) => {
+    // TODOS os pacotes precisam estar disponiveis no dia (interseccao),
+    // se nao a pessoa que paga combo nao consegue fazer tudo.
+    return selectedPacotes.every((pacote) => {
       if (pacote.dias && pacote.dias.length > 0 && !pacote.dias.includes(diaSemana)) return false;
       const datasBloqueadas = pacote.datasBloqueadas ?? [];
       if (datasBloqueadas.includes(dayStr)) return false;
@@ -1538,11 +1537,10 @@ export function BookingSection() {
   };
 
   const isBlockedDay = (day: Date) => {
-    const pacotesParaAvaliar = selectedPacotes.length > 0 ? selectedPacotes : pacotes;
-    if (pacotesParaAvaliar.length === 0) return false;
+    if (selectedPacotes.length === 0) return false;
     const dayStr = day.toISOString().slice(0, 10);
     if (diasBloqueados.has(dayStr)) return true;
-    return pacotesParaAvaliar.every((pacote) =>
+    return selectedPacotes.every((pacote) =>
       (pacote.datasBloqueadas ?? []).includes(dayStr)
     );
   };
@@ -1765,8 +1763,8 @@ export function BookingSection() {
   ] as const;
 
   const etapaParaCampo = (campo: string): EtapaReserva => {
-    if (campo === "data") return 0;
-    if (campo === "pacotes") return 1;
+    if (campo === "pacotes") return 0;
+    if (campo === "data") return 1;
     if (["horario", "perguntas"].includes(campo)) return 2;
     if (["participantes", "pet"].includes(campo)) return 3;
     return 4;
@@ -1785,21 +1783,21 @@ export function BookingSection() {
   const getErrorsAteEtapa = (ateEtapa: EtapaReserva) => {
     const errors: Record<string, string> = {};
 
-    // Etapa 0: Data
+    // Etapa 0: Pacotes / Monte seu grupo
     if (ateEtapa >= 0) {
-      if (!selectedDay) {
-        errors.data = "Selecione uma data disponível.";
-      } else if (diaSelecionadoFechado) {
-        errors.data = "Esta data está indisponível. Escolha outra.";
-      }
-    }
-
-    // Etapa 1: Pacotes / Monte seu grupo
-    if (ateEtapa >= 1) {
       if (gruposAtivos.length === 0) {
         errors.pacotes = "Adicione pelo menos uma pessoa em algum grupo.";
       } else if (totalParticipantesSelecionados <= 0) {
         errors.participantes = "Informe a quantidade de participantes em pelo menos um grupo.";
+      }
+    }
+
+    // Etapa 1: Data
+    if (ateEtapa >= 1) {
+      if (!selectedDay) {
+        errors.data = "Selecione uma data disponível.";
+      } else if (diaSelecionadoFechado) {
+        errors.data = "Esta data está indisponível. Escolha outra.";
       }
     }
 
@@ -1942,12 +1940,12 @@ export function BookingSection() {
 
   const wizardSteps = [
     {
-      title: "Data",
-      description: "Escolha o dia da sua visita.",
+      title: "Pacotes",
+      description: "Monte seu grupo: combos e atividades.",
     },
     {
-      title: "Pacotes",
-      description: "Escolha as atividades para esse dia.",
+      title: "Data",
+      description: "Escolha o dia disponível para os pacotes.",
     },
     {
       title: "Horários",
@@ -1955,7 +1953,7 @@ export function BookingSection() {
     },
     {
       title: "Participantes",
-      description: "Informe quantos vão e se levará pet.",
+      description: "Revise o grupo e informe se levará pet.",
     },
     {
       title: "Pagamento",
@@ -2523,8 +2521,8 @@ export function BookingSection() {
                   </div>
                 </div>
 
-                {/* ============ ETAPA 0 — DATA ============ */}
-                {etapa === 0 && (
+                {/* ============ ETAPA 1 — DATA ============ */}
+                {etapa === 1 && (
                   <div className="mb-6">
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
                       Quando você quer vir?<span className="text-red-500 ml-0.5">*</span>
@@ -2560,12 +2558,12 @@ export function BookingSection() {
                   </div>
                 )}
 
-                {/* ============ ETAPA 1 — MONTE SEU GRUPO ============ */}
-                {etapa === 1 && (
+                {/* ============ ETAPA 0 — MONTE SEU GRUPO ============ */}
+                {etapa === 0 && (
                   <div ref={pacotesRef} className="space-y-5">
                     <div className="mb-1">
                       <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#8B4F23]/70 mb-1">
-                        Passo 2 de 5
+                        Passo 1 de 5
                       </p>
                       <h3 className="text-xl font-bold text-[#2D1E0F]">Monte seu grupo</h3>
                       <p className="text-sm text-slate-500 mt-1">
