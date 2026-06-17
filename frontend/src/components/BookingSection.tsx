@@ -458,6 +458,8 @@ export function BookingSection() {
   const [horariosPorPacote, setHorariosPorPacote] = useState<Record<string, string>>({});
   // Sub-etapa dentro do passo de pagamento: método primeiro, depois PIX ou cartão.
   const [subEtapaPagamento, setSubEtapaPagamento] = useState<SubEtapaPagamento>("metodo");
+  // Sub-passo dentro da etapa Participantes — segue gruposParticipacao + "pet" no final
+  const [subPassoParticipantes, setSubPassoParticipantes] = useState<number>(0);
   const [diasBloqueados, setDiasBloqueados] = useState<Set<string>>(new Set());
   const [diaSelecionadoFechado, setDiaSelecionadoFechado] = useState(false);
   const [participantesPorGrupo, setParticipantesPorGrupo] = useState<ParticipantesPorGrupo>({});
@@ -550,6 +552,7 @@ export function BookingSection() {
     setHorariosPorPacote({});
     setSubEtapaPagamento("metodo");
     setParticipantesPorGrupo({});
+    setSubPassoParticipantes(0);
     setTemPet(null);
     setCheckoutUrl(null);
     setFormaPagamento("CREDIT_CARD");
@@ -2092,6 +2095,11 @@ export function BookingSection() {
       setSubEtapaPagamento("metodo");
       return;
     }
+    // Etapa 3 (Participantes): retrocede sub-passo antes de sair
+    if (etapa === 3 && subPassoParticipantes > 0) {
+      setSubPassoParticipantes(subPassoParticipantes - 1);
+      return;
+    }
     setEtapa((prev) => (prev > 0 ? ((prev - 1) as EtapaReserva) : prev));
   };
 
@@ -2158,6 +2166,12 @@ export function BookingSection() {
     }
 
     if (etapa === 3) {
+      // Se ainda há sub-passos de Participantes, avança o sub-passo
+      const totalSubPassos = gruposParticipacao.length + 1; // grupos + pet
+      if (subPassoParticipantes < totalSubPassos - 1) {
+        setSubPassoParticipantes(subPassoParticipantes + 1);
+        return;
+      }
       const validation = validateForm(3);
       if (!validation.ok) {
         setEtapa(etapaParaPrimeiroErro(validation.errors));
@@ -3317,10 +3331,197 @@ export function BookingSection() {
                 )}
 
                 {/* ============ ETAPA 3 — REVISÃO + PET ============ */}
-                {etapa === 3 && (
+                {etapa === 3 && (() => {
+                  // Sub-passos = um por grupo + sub-passo "pet" no final
+                  const totalSubPassos = gruposParticipacao.length + 1; // grupos + pet
+                  const idx = Math.max(0, Math.min(subPassoParticipantes, totalSubPassos - 1));
+                  const ehPet = idx === gruposParticipacao.length;
+                  const grupo = !ehPet ? gruposParticipacao[idx] : null;
+
+                  return (
+                <div ref={participantesRef}>
+                  {/* Stepper bolinhas conectadas */}
+                  {totalSubPassos > 1 && (
+                    <div className="relative flex items-center justify-between px-1 mb-4">
+                      <div className="absolute left-2.5 right-2.5 top-1/2 -translate-y-1/2 h-0.5 bg-slate-200 rounded-full" aria-hidden="true" />
+                      <div
+                        className="absolute left-2.5 top-1/2 -translate-y-1/2 h-0.5 rounded-full transition-all duration-500"
+                        style={{
+                          width: `calc((100% - 1.25rem) * ${idx / Math.max(totalSubPassos - 1, 1)})`,
+                          background: "linear-gradient(90deg, #8B4F23, #A05D2B)",
+                        }}
+                        aria-hidden="true"
+                      />
+                      {Array.from({ length: totalSubPassos }).map((_, i) => {
+                        const ativo = i === idx;
+                        const concluido = i < idx;
+                        const liberado = i <= idx;
+                        const ehUltimo = i === totalSubPassos - 1;
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            disabled={!liberado}
+                            onClick={() => liberado && setSubPassoParticipantes(i)}
+                            className="relative z-10 flex flex-col items-center disabled:cursor-not-allowed"
+                          >
+                            <span
+                              className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold transition-all duration-300 ring-2 ${
+                                ativo
+                                  ? "bg-gradient-to-br from-[#8B4F23] to-[#A05D2B] text-white ring-[#E0B13C]/40 shadow scale-110"
+                                  : concluido
+                                  ? "bg-[#8B4F23] text-white ring-white"
+                                  : "bg-white text-slate-400 ring-white border border-slate-200"
+                              }`}
+                            >
+                              {concluido ? (
+                                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                </svg>
+                              ) : ehUltimo ? "🐾" : i + 1}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Total compacto */}
+                  {totalParticipantesSelecionados > 0 && (
+                    <div className="mb-3 rounded-xl bg-emerald-50/60 border border-emerald-200 px-3 py-2 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-emerald-800">
+                        {totalParticipantesSelecionados} pessoa(s) já no grupo
+                      </span>
+                      <span className="text-sm font-bold text-[#8B4F23]">{formatCurrency(calcularTotal())}</span>
+                    </div>
+                  )}
+
+                  {/* Sub-passo de grupo (combo ou pacote individual) */}
+                  {grupo && (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="mb-3">
+                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider mb-1.5 ${
+                          grupo.tipo === "combo"
+                            ? "bg-[#E0B13C]/15 text-[#8B4F23] border border-[#E0B13C]/30"
+                            : "bg-slate-100 text-slate-600 border border-slate-200"
+                        }`}>
+                          {grupo.tipo === "combo" ? "🎉 Combo" : "Individual"}
+                        </span>
+                        <h4 className="text-base font-bold text-[#2D1E0F]">{grupo.nome}</h4>
+                        <p className="text-xs text-slate-500 mt-0.5">{grupo.descricao}</p>
+                      </div>
+
+                      <div className="space-y-2 pt-3 border-t border-slate-100">
+                        {tiposClientesAtivos.map((tipo) => {
+                          const chave = obterChaveTipo(tipo);
+                          const valor = Number(obterValorMapa(participantesPorGrupo[grupo.chave] ?? {}, tipo) ?? 0);
+                          return (
+                            <div key={chave} className="flex items-center justify-between gap-2">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
+                                {tipo.descricao && (
+                                  <p className="text-[10px] text-slate-400 truncate">{tipo.descricao}</p>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => atualizarParticipantesGrupo(grupo.chave, tipo, -1)}
+                                  disabled={valor <= 0}
+                                  className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-lg disabled:opacity-30 disabled:cursor-not-allowed"
+                                  aria-label={`Diminuir ${tipo.nome}`}
+                                >−</button>
+                                <span className="w-7 text-center text-base font-bold tabular-nums">{valor}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => atualizarParticipantesGrupo(grupo.chave, tipo, 1)}
+                                  className="w-9 h-9 rounded-full bg-[#8B4F23] hover:bg-[#A05D2B] text-white font-bold text-lg"
+                                  aria-label={`Aumentar ${tipo.nome}`}
+                                >+</button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sub-passo Pet */}
+                  {ehPet && (
+                    <div ref={petRef} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <h4 className="text-base font-bold text-[#2D1E0F] mb-3">Vai levar pet? <span className="text-red-500">*</span></h4>
+                      <div className="grid grid-cols-2 gap-3">
+                        <label className={`flex items-center gap-2 rounded-xl border-2 p-3 cursor-pointer transition-all ${
+                          temPet === true ? "border-[#8B4F23] bg-[#8B4F23]/5" : "border-slate-200 bg-white hover:border-[#8B4F23]/30"
+                        }`}>
+                          <input type="radio" name="pet" checked={temPet === true} onChange={() => { setTemPet(true); setFieldError("pet"); }} className="sr-only" />
+                          <span className="text-xl">🐾</span>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">Sim</p>
+                            <p className="text-[10px] text-slate-500">Levo pet</p>
+                          </div>
+                        </label>
+                        <label className={`flex items-center gap-2 rounded-xl border-2 p-3 cursor-pointer transition-all ${
+                          temPet === false ? "border-[#8B4F23] bg-[#8B4F23]/5" : "border-slate-200 bg-white hover:border-[#8B4F23]/30"
+                        }`}>
+                          <input type="radio" name="pet" checked={temPet === false} onChange={() => { setTemPet(false); setFieldError("pet"); }} className="sr-only" />
+                          <span className="text-xl">🚫</span>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-800">Não</p>
+                            <p className="text-[10px] text-slate-500">Sem pets</p>
+                          </div>
+                        </label>
+                      </div>
+                      {temPet === true && getPetMessage() && (
+                        <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded-lg">
+                          <p className="text-xs text-red-700">⚠️ {getPetMessage()}</p>
+                        </div>
+                      )}
+                      {((obterValorPorTipoNome(participantesPorTipo, tiposClientesAtivos, "bariat") ?? 0) > 0) && (
+                        <div className="mt-3 p-2.5 bg-orange-50 border border-orange-200 rounded-lg">
+                          <p className="text-xs text-orange-700">
+                            ⚠️ <strong>Bariátrica:</strong> envie carteirinha via WhatsApp após a reserva.
+                          </p>
+                        </div>
+                      )}
+                      {formErrors.pet && (
+                        <p className="mt-2 text-sm text-red-600">{formErrors.pet}</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Navegação entre sub-passos */}
+                  <div className="mt-4 flex gap-2">
+                    {idx > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setSubPassoParticipantes(idx - 1)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                      >
+                        ← Anterior
+                      </button>
+                    )}
+                    {idx < totalSubPassos - 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setSubPassoParticipantes(idx + 1)}
+                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full bg-[#8B4F23] text-white px-3 py-2 text-sm font-semibold hover:bg-[#A05D2B]"
+                      >
+                        Próxima →
+                      </button>
+                    )}
+                  </div>
+
+                  {formErrors.participantes && (
+                    <p className="mt-2 text-sm text-red-600">{formErrors.participantes}</p>
+                  )}
+                </div>
+                  );
+                })()}
+                {false && (
                   <>
 
-            <div ref={participantesRef} className="mb-6">
+            <div className="mb-6">
               <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
