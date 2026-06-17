@@ -63,14 +63,6 @@ type TipoClienteQuantidade = Record<string, number>;
 
 type TipoClientePreco = Record<string, number>;
 
-// Grupo de participação: pessoas que farão um conjunto específico de atividades
-type GrupoParticipacao = {
-  chave: string;                            // "combo:<id>" ou "pacote:<id>"
-  tipo: "combo" | "pacote";
-  refId: string;                            // id do combo ou do pacote
-  participantesPorTipo: TipoClienteQuantidade;
-};
-
 type Pacote = {
   id?: string;
   nome: string;
@@ -397,8 +389,6 @@ export function BookingSection() {
   const [loadingPacotes, setLoadingPacotes] = useState(true);
   const [reservasDia, setReservasDia] = useState<ReservaResumo[]>([]);
   const [selectedPackages, setSelectedPackages] = useState<string[]>([]);
-  // Grupos de participação: cada combo/pacote disponível pode ter pessoas atribuídas
-  const [gruposParticipacao, setGruposParticipacao] = useState<GrupoParticipacao[]>([]);
   const [etapa, setEtapa] = useState<EtapaReserva>(0);
 
   // Formulário
@@ -413,8 +403,6 @@ export function BookingSection() {
   const [horariosPorPacote, setHorariosPorPacote] = useState<Record<string, string>>({});
   // Sub-etapa dentro do passo de pagamento: escolha do método ou formulário
   const [subEtapaPagamento, setSubEtapaPagamento] = useState<"metodo" | "form">("metodo");
-  // Sub-passo dentro da etapa "Pacotes": índice na lista de opções (combos + pacotes individuais)
-  const [subPassoPacote, setSubPassoPacote] = useState<number>(0);
   const [diasBloqueados, setDiasBloqueados] = useState<Set<string>>(new Set());
   const [diaSelecionadoFechado, setDiaSelecionadoFechado] = useState(false);
   const [participantesPorTipo, setParticipantesPorTipo] = useState<TipoClienteQuantidade>({});
@@ -453,6 +441,8 @@ export function BookingSection() {
   const petRef = useRef<HTMLDivElement | null>(null);
   const perguntasRef = useRef<HTMLDivElement | null>(null);
   const cartaoRef = useRef<HTMLDivElement | null>(null);
+  const paymentMethodRef = useRef<HTMLDivElement | null>(null);
+  const paymentFormRef = useRef<HTMLDivElement | null>(null);
 
 
   // PIX
@@ -460,7 +450,7 @@ export function BookingSection() {
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
   const [expirationDate, setExpirationDate] = useState<string | null>(null);
   const [pixCopiado, setPixCopiado] = useState(false);
-  const paymentCardRef = useRef<HTMLDivElement>(null);
+  const paymentCardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setCheckoutUrl(null);
@@ -496,7 +486,6 @@ export function BookingSection() {
   const resetFormulario = () => {
     setEtapa(0);
     setSelectedPackages([]);
-    setGruposParticipacao([]);
     setNome("");
     setEmail("");
     setTelefone("");
@@ -505,7 +494,6 @@ export function BookingSection() {
     setHorario("");
     setHorariosPorPacote({});
     setSubEtapaPagamento("metodo");
-    setSubPassoPacote(0);
     setParticipantesPorTipo({});
     setTemPet(null);
     setCheckoutUrl(null);
@@ -836,70 +824,6 @@ export function BookingSection() {
     [pacotes, selectedPackages]
   );
 
-  // Grupos com pelo menos 1 pessoa
-  const gruposAtivos = useMemo(
-    () => gruposParticipacao.filter((g) =>
-      Object.values(g.participantesPorTipo).some((v) => Number(v) > 0)
-    ),
-    [gruposParticipacao]
-  );
-
-  // Total de opções (combos + pacotes individuais) na etapa "Pacotes"
-  const totalOpcoesPacote = combos.length + pacotes.length;
-
-  // Sincroniza selectedPackages a partir dos grupos ativos
-  useEffect(() => {
-    if (gruposAtivos.length === 0) return;
-    const idsPacotes = new Set<string>();
-    gruposAtivos.forEach((grupo) => {
-      if (grupo.tipo === "combo") {
-        const combo = combos.find((c) => c.id === grupo.refId);
-        combo?.pacoteIds.forEach((id) => id && idsPacotes.add(id));
-      } else if (grupo.tipo === "pacote") {
-        idsPacotes.add(grupo.refId);
-      }
-    });
-    const novoArr = Array.from(idsPacotes);
-    setSelectedPackages((prev) => {
-      if (prev.length === novoArr.length && prev.every((id) => idsPacotes.has(id))) {
-        return prev;
-      }
-      return novoArr;
-    });
-  }, [gruposAtivos, combos]);
-
-  // Sincroniza participantesPorTipo global a partir dos grupos
-  useEffect(() => {
-    if (gruposAtivos.length === 0) return;
-    const soma: TipoClienteQuantidade = {};
-    gruposAtivos.forEach((grupo) => {
-      Object.entries(grupo.participantesPorTipo).forEach(([chave, qtd]) => {
-        soma[chave] = (soma[chave] ?? 0) + Number(qtd);
-      });
-    });
-    setParticipantesPorTipo((prev) => {
-      const chavesPrev = Object.keys(prev);
-      const chavesNov = Object.keys(soma);
-      if (
-        chavesPrev.length === chavesNov.length &&
-        chavesPrev.every((k) => Number(prev[k] ?? 0) === Number(soma[k] ?? 0))
-      ) {
-        return prev;
-      }
-      return soma;
-    });
-  }, [gruposAtivos]);
-
-  const pacotesMap = useMemo(() => {
-    const mapa = new Map<string, Pacote>();
-    pacotes.forEach((pacote) => {
-      if (pacote.id) {
-        mapa.set(pacote.id, pacote);
-      }
-    });
-    return mapa;
-  }, [pacotes]);
-
   const pacotesPorNome = useMemo(() => {
     const mapa = new Map<string, string>();
     pacotes.forEach((pacote) => {
@@ -969,18 +893,6 @@ export function BookingSection() {
         c.pacoteIds.every((id) => selectedPackages.includes(id))
     );
   }, [combos, selectedPackages]);
-
-  const handleSelectCombo = (combo: Combo) => {
-    const jaAtivo = comboAtivo?.id === combo.id;
-    if (jaAtivo) {
-      setSelectedPackages([]);
-    } else {
-      const idsValidos = combo.pacoteIds.filter((id) => pacotesMap.has(id));
-      setSelectedPackages(idsValidos);
-    }
-    setHorario("");
-    setFieldError("pacotes");
-  };
 
   const temPacoteFaixa = useMemo(
     () =>
@@ -1315,27 +1227,6 @@ export function BookingSection() {
     selectedDay,
   ]);
 
-  const disponibilidadeCombosNoDia = useMemo(() => {
-    const mapa: Record<string, boolean> = {};
-    if (!selectedDay || diaSelecionadoFechado) return mapa;
-
-    combos.forEach((combo) => {
-      if (!combo.id) return;
-      const pacotesCombo = combo.pacoteIds
-        .map((id) => pacotesMap.get(id))
-        .filter(Boolean) as Pacote[];
-      if (pacotesCombo.length !== combo.pacoteIds.length || pacotesCombo.length === 0) {
-        mapa[combo.id] = false;
-        return;
-      }
-      mapa[combo.id] = pacotesCombo.every(
-        (pacote) => pacote.id && disponibilidadePacotesNoDia[pacote.id] !== false
-      );
-    });
-
-    return mapa;
-  }, [combos, diaSelecionadoFechado, disponibilidadePacotesNoDia, pacotesMap, selectedDay]);
-
   useEffect(() => {
     const target =
       etapa === 0
@@ -1346,14 +1237,16 @@ export function BookingSection() {
         ? participantesRef.current ?? petRef.current
         : etapa === 3
         ? perguntasRef.current ?? participantesRef.current
-        : nomeRef.current ?? cartaoRef.current;
+        : subEtapaPagamento === "metodo"
+        ? paymentMethodRef.current
+        : paymentFormRef.current ?? nomeRef.current ?? cartaoRef.current;
 
     if (!target) return;
     const timeoutId = window.setTimeout(() => {
       target.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 80);
     return () => window.clearTimeout(timeoutId);
-  }, [etapa]);
+  }, [etapa, subEtapaPagamento]);
 
   if (loadingPacotes) {
     return (
@@ -1395,112 +1288,37 @@ export function BookingSection() {
     );
   }
 
-  // Calcula total considerando os grupos de participação:
-  // cada grupo é precificado isoladamente — combo com seu preço/desconto, pacote com seu preço normal.
+  // Calcula total: soma de pacotes selecionados × qtd participantes por tipo.
+  // Se a seleção bater com um combo, aplica preço/desconto especial.
   const calcularTotal = () => {
-    if (gruposAtivos.length === 0) {
-      // Fallback: modelo antigo (sem grupos)
-      let total = 0;
-      selectedPacotes.forEach((pacote) => {
-        const subtotal = tiposClientesAtivos.reduce((acc, tipo) => {
+    let total = 0;
+    selectedPacotes.forEach((pacote) => {
+      const subtotal = tiposClientesAtivos.reduce((acc, tipo) => {
+        const quantidade = Number(obterValorMapa(participantesPorTipo, tipo) ?? 0);
+        const preco = obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote);
+        return acc + quantidade * preco;
+      }, 0);
+      total += subtotal;
+    });
+
+    if (comboAtivo) {
+      if (hasCustomComboPricing(comboAtivo)) {
+        total = tiposClientesAtivos.reduce((acc, tipo) => {
           const quantidade = Number(obterValorMapa(participantesPorTipo, tipo) ?? 0);
-          const preco = obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote);
+          const preco = obterPrecoPorTipo(comboAtivo.precosPorTipo, tipo, comboAtivo);
           return acc + quantidade * preco;
         }, 0);
-        total += subtotal;
-      });
-      return total;
+      } else {
+        const valorCombo = Number(comboAtivo.preco);
+        if (Number.isFinite(valorCombo) && valorCombo > 0) {
+          total = valorCombo * somarMapa(participantesPorTipo);
+        } else if (comboAtivo.desconto && comboAtivo.desconto > 0) {
+          total = total * (1 - comboAtivo.desconto / 100);
+        }
+      }
     }
 
-    let total = 0;
-    gruposAtivos.forEach((grupo) => {
-      const totalPessoasGrupo = Object.values(grupo.participantesPorTipo).reduce(
-        (acc, v) => acc + Number(v ?? 0),
-        0
-      );
-      if (totalPessoasGrupo === 0) return;
-
-      if (grupo.tipo === "combo") {
-        const combo = combos.find((c) => c.id === grupo.refId);
-        if (!combo) return;
-
-        if (hasCustomComboPricing(combo)) {
-          tiposClientesAtivos.forEach((tipo) => {
-            const chave = obterChaveTipo(tipo);
-            const qtd = Number(grupo.participantesPorTipo[chave] ?? 0);
-            total += qtd * obterPrecoPorTipo(combo.precosPorTipo, tipo, combo);
-          });
-        } else if (combo.preco && combo.preco > 0) {
-          total += combo.preco * totalPessoasGrupo;
-        } else {
-          // Soma dos pacotes do combo com possivel desconto
-          let subtotal = 0;
-          combo.pacoteIds.forEach((pacoteId) => {
-            const pacote = pacotes.find((p) => p.id === pacoteId);
-            if (!pacote) return;
-            tiposClientesAtivos.forEach((tipo) => {
-              const chave = obterChaveTipo(tipo);
-              const qtd = Number(grupo.participantesPorTipo[chave] ?? 0);
-              subtotal += qtd * obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote);
-            });
-          });
-          if (combo.desconto && combo.desconto > 0) {
-            subtotal = subtotal * (1 - combo.desconto / 100);
-          }
-          total += subtotal;
-        }
-      } else {
-        // pacote individual
-        const pacote = pacotes.find((p) => p.id === grupo.refId);
-        if (!pacote) return;
-        tiposClientesAtivos.forEach((tipo) => {
-          const chave = obterChaveTipo(tipo);
-          const qtd = Number(grupo.participantesPorTipo[chave] ?? 0);
-          total += qtd * obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote);
-        });
-      }
-    });
-
     return total;
-  };
-
-  // Helpers para a UI de grupos
-  const obterGrupoPorChave = (chave: string) =>
-    gruposParticipacao.find((g) => g.chave === chave);
-
-  const ajustarQuantidadeNoGrupo = (
-    chave: string,
-    tipo: "combo" | "pacote",
-    refId: string,
-    tipoChave: string,
-    delta: number
-  ) => {
-    setGruposParticipacao((prev) => {
-      const idx = prev.findIndex((g) => g.chave === chave);
-      if (idx === -1) {
-        if (delta <= 0) return prev;
-        return [
-          ...prev,
-          {
-            chave,
-            tipo,
-            refId,
-            participantesPorTipo: { [tipoChave]: Math.max(delta, 0) },
-          },
-        ];
-      }
-      const grupo = prev[idx];
-      const atual = Number(grupo.participantesPorTipo[tipoChave] ?? 0);
-      const proximo = Math.max(atual + delta, 0);
-      const novoMapa = { ...grupo.participantesPorTipo, [tipoChave]: proximo };
-      if (proximo === 0) delete novoMapa[tipoChave];
-      const proximoGrupo: GrupoParticipacao = { ...grupo, participantesPorTipo: novoMapa };
-      const proximoArr = [...prev];
-      proximoArr[idx] = proximoGrupo;
-      return proximoArr;
-    });
-    setFieldError("participantes");
-    setFieldError("pacotes");
   };
 
   const hasDisponibilidadeNoDia = (day: Date) => {
@@ -1574,6 +1392,7 @@ export function BookingSection() {
   const handleDaySelect = (day?: Date) => {
     setSelectedDay(day);
     setHorario("");
+    setHorariosPorPacote({});
     setFieldError("data");
     setFieldError("horario");
   };
@@ -1584,8 +1403,12 @@ export function BookingSection() {
         ? prev.filter(id => id !== packageId)
         : [...prev, packageId]
     );
+    setSelectedDay(undefined);
     setHorario("");
+    setHorariosPorPacote({});
+    setTemPet(null);
     setFieldError("pacotes");
+    setFieldError("data");
     setFieldError("horario");
   };
 
@@ -1789,12 +1612,10 @@ export function BookingSection() {
   const getErrorsAteEtapa = (ateEtapa: EtapaReserva) => {
     const errors: Record<string, string> = {};
 
-    // Etapa 0: Pacotes / Monte seu grupo
+    // Etapa 0: Pacotes
     if (ateEtapa >= 0) {
-      if (gruposAtivos.length === 0) {
-        errors.pacotes = "Adicione pelo menos uma pessoa em algum grupo.";
-      } else if (totalParticipantesSelecionados <= 0) {
-        errors.participantes = "Informe a quantidade de participantes em pelo menos um grupo.";
+      if (selectedPackages.length === 0) {
+        errors.pacotes = "Selecione pelo menos um pacote.";
       }
     }
 
@@ -1809,29 +1630,31 @@ export function BookingSection() {
 
     // Etapa 2: Horário (de cada pacote) + perguntas personalizadas
     if (ateEtapa >= 2) {
-      const haHorariosVisiveis = horariosVisiveis.length > 0;
-      const haHorariosComVagas = horariosComVagas.length > 0;
-      const haHorariosDisponiveis = horariosDisponiveis.length > 0;
-
-      // Pacotes lista (não-faixa) que têm horários configurados
-      const precisaHorario = selectedPacotes.some(
+      const pacotesComHorario = selectedPacotes.filter(
         (p) => p.modoHorario !== "intervalo" && (p.horarios?.length ?? 0) > 0
       );
+      const pacotesSemHorarioVisivel = pacotesComHorario.filter((pacote) => {
+        const horariosPacote = (pacote.horarios ?? []).filter((h) => horariosVisiveis.includes(h));
+        return horariosPacote.length === 0;
+      });
+      const pacotesSemHorarioComVaga = pacotesComHorario.filter((pacote) => {
+        const horariosPacote = (pacote.horarios ?? []).filter((h) => horariosVisiveis.includes(h));
+        return horariosPacote.length > 0 && !horariosPacote.some((h) => horariosComVagas.includes(h));
+      });
+      const pacotesSemHorarioSelecionado = pacotesComHorario.filter((pacote) => {
+        if (!pacote.id) return false;
+        const horariosPacote = (pacote.horarios ?? []).filter((h) => horariosDisponiveis.includes(h));
+        return horariosPacote.length > 0 && !horariosPorPacote[pacote.id];
+      });
 
-      if (selectedDay && haHorariosVisiveis && !horario) {
-        errors.horario = haHorariosDisponiveis
-          ? "Escolha um horário disponível."
-          : haHorariosComVagas
-          ? "Nenhum horário comporta a quantidade de participantes selecionada. Reduza os participantes ou escolha outra data."
-          : "Todos os horários estão lotados para os pacotes selecionados.";
-      }
-
-      if (selectedDay && !haHorariosVisiveis) {
-        if (precisaHorario) {
-          errors.horario = "Não há horários disponíveis para os pacotes selecionados nesta data. Escolha outra data.";
-        } else if (!temPacoteFaixa) {
-          errors.horario = "Nenhum horário configurado para esta data. Escolha outra data.";
-        }
+      if (selectedDay && pacotesSemHorarioVisivel.length > 0) {
+        errors.horario = "Não há horários disponíveis para os pacotes selecionados nesta data. Escolha outra data.";
+      } else if (selectedDay && pacotesSemHorarioComVaga.length > 0) {
+        errors.horario = "Todos os horários estão lotados para os pacotes selecionados.";
+      } else if (selectedDay && pacotesSemHorarioSelecionado.length > 0) {
+        errors.horario = "Escolha o horário de todos os pacotes selecionados.";
+      } else if (selectedDay && pacotesComHorario.length === 0 && !temPacoteFaixa) {
+        errors.horario = "Nenhum horário configurado para esta data. Escolha outra data.";
       }
     }
 
@@ -1947,7 +1770,7 @@ export function BookingSection() {
   const wizardSteps = [
     {
       title: "Pacotes",
-      description: "Monte seu grupo: combos e atividades.",
+      description: "Escolha uma ou mais atividades.",
     },
     {
       title: "Data",
@@ -1967,15 +1790,20 @@ export function BookingSection() {
     },
   ] as const;
 
+  const handleSelecionarFormaPagamento = (metodo: "PIX" | "CREDIT_CARD") => {
+    setFormaPagamento(metodo);
+    setSubEtapaPagamento("form");
+
+    window.setTimeout(() => {
+      const target = paymentFormRef.current ?? nomeRef.current ?? cartaoRef.current;
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  };
+
   const handleVoltarEtapa = () => {
     // Se está no formulário de pagamento, volta pro seletor de método antes de sair da etapa 4
     if (etapa === 4 && subEtapaPagamento === "form") {
       setSubEtapaPagamento("metodo");
-      return;
-    }
-    // Na etapa Pacotes (0): se há sub-passo anterior, retrocede o sub-passo em vez de sair da etapa
-    if (etapa === 0 && subPassoPacote > 0) {
-      setSubPassoPacote(subPassoPacote - 1);
       return;
     }
     setEtapa((prev) => (prev > 0 ? ((prev - 1) as EtapaReserva) : prev));
@@ -1984,13 +1812,7 @@ export function BookingSection() {
   const handleAvancarEtapa = () => {
     // Se está escolhendo método, avança pro formulário (sem sair da etapa 4)
     if (etapa === 4 && subEtapaPagamento === "metodo") {
-      setSubEtapaPagamento("form");
-      return;
-    }
-
-    // Na etapa Pacotes (0): se ainda há próxima opção, avança o sub-passo em vez de sair da etapa
-    if (etapa === 0 && subPassoPacote < totalOpcoesPacote - 1) {
-      setSubPassoPacote(subPassoPacote + 1);
+      handleSelecionarFormaPagamento(formaPagamento);
       return;
     }
 
@@ -2049,6 +1871,11 @@ export function BookingSection() {
       return;
     }
 
+    if (subEtapaPagamento === "metodo") {
+      handleAvancarEtapa();
+      return;
+    }
+
     if (loading || bloqueiaEnvioCartao) {
       return;
     }
@@ -2100,7 +1927,7 @@ export function BookingSection() {
         ? hasCustomComboPricing(comboAtivo)
           ? ` (Combo: ${comboAtivo.nome} - ${describeComboValores(comboAtivo)})`
           : comboAtivo.preco && comboAtivo.preco > 0
-            ? ` (Combo: ${comboAtivo.nome} - valor especial ${formatCurrency(comboAtivo.preco)})`
+            ? ` (Combo: ${comboAtivo.nome} - valor especial ${formatCurrency(comboAtivo.preco)} por pessoa)`
             : comboAtivo.desconto && comboAtivo.desconto > 0
               ? ` (Combo: ${comboAtivo.nome} - ${comboAtivo.desconto}% de desconto)`
               : ` (Combo: ${comboAtivo.nome})`
@@ -2131,12 +1958,6 @@ export function BookingSection() {
         temPet,
         pacoteIds: selectedPackages,
         comboId: comboAtivo?.id || null,
-        // Segmentação de quem participa de qual experiência
-        gruposParticipacao: gruposAtivos.map((g) => ({
-          tipo: g.tipo,
-          refId: g.refId,
-          participantesPorTipo: g.participantesPorTipo,
-        })),
       };
 
       if (formaPagamento === "CREDIT_CARD" && cartaoExpiracao) {
@@ -2575,310 +2396,106 @@ export function BookingSection() {
                   </div>
                 )}
 
-                {/* ============ ETAPA 0 — MONTE SEU GRUPO (com sub-passos) ============ */}
-                {etapa === 0 && (() => {
-                  // Constrói a lista de opções: combos primeiro, depois pacotes individuais
-                  type OpcaoPacote =
-                    | { tipo: "combo"; combo: Combo }
-                    | { tipo: "pacote"; pacote: Pacote };
-                  const opcoes: OpcaoPacote[] = [
-                    ...combos.map((c) => ({ tipo: "combo" as const, combo: c })),
-                    ...pacotes.map((p) => ({ tipo: "pacote" as const, pacote: p })),
-                  ];
-                  const total = opcoes.length;
-                  const idx = Math.max(0, Math.min(subPassoPacote, total - 1));
-                  const opcaoAtual = opcoes[idx];
-
-                  if (!opcaoAtual) {
-                    return (
-                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                        <p className="text-sm text-amber-800">
-                          Nenhuma atividade disponível no momento.
-                        </p>
-                      </div>
-                    );
-                  }
-
-                  const isUltimo = idx === total - 1;
-                  const nomeOpcao = opcaoAtual.tipo === "combo"
-                    ? opcaoAtual.combo.nome
-                    : `Somente ${opcaoAtual.pacote.nome}`;
-
-                  return (
-                    <div ref={pacotesRef} className="space-y-5">
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#8B4F23]/70">
-                            Opção {idx + 1} de {total}
-                          </p>
-                          {totalParticipantesSelecionados > 0 && (
-                            <p className="text-[10px] font-semibold text-emerald-700">
-                              {totalParticipantesSelecionados} pessoa(s) já no grupo
-                            </p>
-                          )}
-                        </div>
-                        <h3 className="text-xl font-bold text-[#2D1E0F]">Monte seu grupo</h3>
-                        <p className="text-sm text-slate-500 mt-1">
-                          Quem vai participar de <strong className="text-[#8B4F23]">{nomeOpcao}</strong>? Pode pular se ninguém for.
-                        </p>
-
-                        {/* Stepper sub-passos (bolinhas pequenas) */}
-                        {total > 1 && (
-                          <div className="mt-3 flex items-center gap-1.5">
-                            {opcoes.map((op, i) => {
-                              const chave = op.tipo === "combo"
-                                ? `combo:${op.combo.id}`
-                                : `pacote:${op.pacote.id}`;
-                              const grupoCheck = obterGrupoPorChave(chave);
-                              const temPessoas = grupoCheck
-                                && Object.values(grupoCheck.participantesPorTipo).some((v) => Number(v) > 0);
-                              const ativa = i === idx;
-                              return (
-                                <button
-                                  key={chave}
-                                  type="button"
-                                  onClick={() => setSubPassoPacote(i)}
-                                  className={`h-2 rounded-full transition-all duration-300 ${
-                                    ativa
-                                      ? "w-8 bg-[#8B4F23]"
-                                      : temPessoas
-                                      ? "w-2 bg-emerald-500"
-                                      : "w-2 bg-slate-300 hover:bg-slate-400"
-                                  }`}
-                                  aria-label={`Ir para opção ${i + 1}`}
-                                />
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* CARD DA OPÇÃO ATUAL */}
-                      {opcaoAtual.tipo === "combo" ? (() => {
-                        const combo = opcaoAtual.combo;
-                        const chave = `combo:${combo.id}`;
-                        const grupo = obterGrupoPorChave(chave);
-                        const totalNoGrupo = grupo
-                          ? Object.values(grupo.participantesPorTipo).reduce((a, b) => a + Number(b), 0)
-                          : 0;
-                        const indisponivelNoDia = Boolean(
-                          selectedDay && combo.id && disponibilidadeCombosNoDia[combo.id] === false
-                        );
-                        const nomes = combo.pacoteIds
-                          .map((id) => pacotesMap.get(id)?.nome ?? "Pacote removido")
-                          .filter(Boolean)
-                          .join(" + ");
-                        const possuiTabela = hasCustomComboPricing(combo);
-                        const resumoValores = describeComboValores(combo);
-
-                        return (
-                          <div
-                            className={`rounded-2xl border-2 p-5 transition-all duration-300 ${
-                              indisponivelNoDia
-                                ? "border-slate-100 bg-slate-50 opacity-60"
-                                : totalNoGrupo > 0
-                                ? "border-[#E0B13C] bg-gradient-to-br from-[#E0B13C]/10 via-white to-[#8B4F23]/5 shadow-lg shadow-[#E0B13C]/15"
-                                : "border-slate-200 bg-white shadow-sm"
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3 mb-3">
-                              <div className="flex-1 min-w-0">
-                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#E0B13C] mb-1">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-[#E0B13C]" />
-                                  Combo
-                                </span>
-                                <p className="text-base font-bold text-[#2D1E0F]">{combo.nome}</p>
-                                <p className="text-xs text-slate-500 mt-0.5">{nomes || "Pacotes removidos"}</p>
-                              </div>
-                              <span className={`text-xs font-semibold whitespace-nowrap ${indisponivelNoDia ? "text-red-700" : "text-emerald-700"}`}>
-                                {indisponivelNoDia
-                                  ? "Esgotado"
-                                  : possuiTabela
-                                  ? "Personalizado"
-                                  : combo.preco && combo.preco > 0
-                                  ? formatCurrency(combo.preco)
-                                  : combo.desconto && combo.desconto > 0
-                                  ? `${combo.desconto}% off`
-                                  : "Especial"}
-                              </span>
-                            </div>
-
-                            {possuiTabela && resumoValores && (
-                              <p className="text-[11px] text-slate-500 mb-3 italic">{resumoValores}</p>
-                            )}
-
-                            {!indisponivelNoDia && (
-                              <div className="space-y-2.5 pt-3 border-t border-slate-100">
-                                {tiposClientesAtivos.map((tipo) => {
-                                  const tipoChave = obterChaveTipo(tipo);
-                                  const qtd = grupo?.participantesPorTipo[tipoChave] ?? 0;
-                                  const preco = possuiTabela
-                                    ? obterPrecoPorTipo(combo.precosPorTipo, tipo, combo)
-                                    : null;
-                                  return (
-                                    <div key={tipoChave} className="flex items-center justify-between gap-3">
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
-                                        {preco !== null && preco > 0 && (
-                                          <p className="text-[11px] text-slate-400">{formatCurrency(preco)} /pessoa</p>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => ajustarQuantidadeNoGrupo(chave, "combo", combo.id!, tipoChave, -1)}
-                                          disabled={qtd <= 0}
-                                          className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                                          aria-label="Diminuir"
-                                        >−</button>
-                                        <span className="w-8 text-center text-base font-bold tabular-nums">{qtd}</span>
-                                        <button
-                                          type="button"
-                                          onClick={() => ajustarQuantidadeNoGrupo(chave, "combo", combo.id!, tipoChave, +1)}
-                                          className="w-9 h-9 rounded-full bg-[#8B4F23] hover:bg-[#A05D2B] text-white font-bold text-lg transition-all"
-                                          aria-label="Aumentar"
-                                        >+</button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })() : (() => {
-                        const pacote = opcaoAtual.pacote;
-                        const chave = `pacote:${pacote.id}`;
-                        const grupo = obterGrupoPorChave(chave);
-                        const totalNoGrupo = grupo
-                          ? Object.values(grupo.participantesPorTipo).reduce((a, b) => a + Number(b), 0)
-                          : 0;
-                        const indisponivelNoDia = Boolean(
-                          selectedDay && pacote.id && disponibilidadePacotesNoDia[pacote.id] === false
-                        );
-
-                        return (
-                          <div
-                            className={`rounded-2xl border-2 p-5 transition-all duration-300 ${
-                              indisponivelNoDia
-                                ? "border-slate-100 bg-slate-50 opacity-60"
-                                : totalNoGrupo > 0
-                                ? "border-[#8B4F23] bg-gradient-to-br from-[#8B4F23]/8 via-white to-[#E0B13C]/8 shadow-lg shadow-[#8B4F23]/10"
-                                : "border-slate-200 bg-white shadow-sm"
-                            }`}
-                          >
-                            <div className="flex items-start justify-between gap-3 mb-3">
-                              <div className="flex-1 min-w-0">
-                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#8B4F23] mb-1">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-[#8B4F23]" />
-                                  Atividade individual
-                                </span>
-                                <p className="text-base font-bold text-[#2D1E0F] flex items-center gap-1.5">
-                                  {pacote.emoji && <span>{pacote.emoji}</span>}
-                                  <span>Somente {pacote.nome}</span>
-                                </p>
-                                <p className="text-[11px] text-slate-500 mt-0.5">
-                                  Pessoas que farão apenas {pacote.nome}.
-                                </p>
-                              </div>
-                              {indisponivelNoDia && (
-                                <span className="text-xs font-semibold text-red-700 whitespace-nowrap">Esgotado</span>
-                              )}
-                            </div>
-
-                            {!indisponivelNoDia && (
-                              <div className="space-y-2.5 pt-3 border-t border-slate-100">
-                                {tiposClientesAtivos.map((tipo) => {
-                                  const tipoChave = obterChaveTipo(tipo);
-                                  const qtd = grupo?.participantesPorTipo[tipoChave] ?? 0;
-                                  const preco = obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote);
-                                  return (
-                                    <div key={tipoChave} className="flex items-center justify-between gap-3">
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
-                                        {preco > 0 && (
-                                          <p className="text-[11px] text-slate-400">{formatCurrency(preco)} /pessoa</p>
-                                        )}
-                                      </div>
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => ajustarQuantidadeNoGrupo(chave, "pacote", pacote.id!, tipoChave, -1)}
-                                          disabled={qtd <= 0}
-                                          className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                                          aria-label="Diminuir"
-                                        >−</button>
-                                        <span className="w-8 text-center text-base font-bold tabular-nums">{qtd}</span>
-                                        <button
-                                          type="button"
-                                          onClick={() => ajustarQuantidadeNoGrupo(chave, "pacote", pacote.id!, tipoChave, +1)}
-                                          className="w-9 h-9 rounded-full bg-[#8B4F23] hover:bg-[#A05D2B] text-white font-bold text-lg transition-all"
-                                          aria-label="Aumentar"
-                                        >+</button>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
-
-                      {/* Mini-resumo do que já foi montado */}
-                      {gruposAtivos.length > 0 && (
-                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 mb-1.5">No grupo até agora</p>
-                          <div className="flex flex-wrap gap-1.5">
-                            {gruposAtivos.map((g) => {
-                              const nome = g.tipo === "combo"
-                                ? combos.find((c) => c.id === g.refId)?.nome
-                                : pacotes.find((p) => p.id === g.refId)?.nome;
-                              const qtd = Object.values(g.participantesPorTipo).reduce((a, b) => a + Number(b), 0);
-                              return (
-                                <span key={g.chave} className="inline-flex items-center gap-1 rounded-full bg-white border border-emerald-200 px-2.5 py-1 text-[11px] font-medium text-emerald-800">
-                                  {qtd}× {nome ?? "—"}
-                                </span>
-                              );
-                            })}
-                          </div>
-                          <p className="mt-2 text-xs text-emerald-700 font-semibold">
-                            Total: {totalParticipantesSelecionados} pessoa(s) · {formatCurrency(calcularTotal())}
-                          </p>
-                        </div>
-                      )}
-
-                      {/* Navegação entre sub-passos */}
-                      {!isUltimo && (
-                        <div className="flex gap-2">
-                          {idx > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => setSubPassoPacote(idx - 1)}
-                              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all"
-                            >
-                              ← Anterior
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setSubPassoPacote(idx + 1)}
-                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full bg-[#8B4F23] text-white px-4 py-2.5 text-sm font-semibold hover:bg-[#A05D2B] transition-all"
-                          >
-                            Próxima opção →
-                          </button>
-                        </div>
-                      )}
-
-                      {formErrors.pacotes && (
-                        <p className="text-sm text-red-600">{formErrors.pacotes}</p>
-                      )}
-                      {formErrors.participantes && (
-                        <p className="text-sm text-red-600">{formErrors.participantes}</p>
-                      )}
+                {/* ============ ETAPA 0 — PACOTES (seleção simples) ============ */}
+                {etapa === 0 && (
+                  <div ref={pacotesRef} className="space-y-5">
+                    <div className="mb-1">
+                      <h3 className="text-xl font-bold text-[#2D1E0F]">Escolha as atividades</h3>
+                      <p className="text-sm text-slate-500 mt-1">
+                        Marque uma ou mais. Se a combinação bater com um combo, o desconto é aplicado automaticamente.
+                      </p>
                     </div>
-                  );
-                })()}
+
+                    {/* PACOTES — checkboxes simples */}
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-[#8B4F23] mb-2.5 flex items-center gap-2">
+                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#8B4F23]" />
+                        Atividades
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {pacotes.map((pacote) => {
+                          const selecionado = selectedPackages.includes(pacote.id!);
+                          const indisponivelNoDia = Boolean(
+                            selectedDay && pacote.id && disponibilidadePacotesNoDia[pacote.id] === false
+                          );
+                          const desabilitado = indisponivelNoDia && !selecionado;
+                          return (
+                            <div
+                              key={pacote.id}
+                              aria-disabled={desabilitado}
+                              onClick={() => !desabilitado && handlePackageToggle(pacote.id!)}
+                              className={`relative rounded-2xl border-2 p-4 transition-all duration-300 ${
+                                desabilitado
+                                  ? "border-slate-100 bg-slate-50 opacity-60 cursor-not-allowed"
+                                  : selecionado
+                                  ? "border-[#8B4F23] bg-gradient-to-br from-[#8B4F23]/8 via-white to-[#E0B13C]/8 cursor-pointer shadow-lg shadow-[#8B4F23]/10 scale-[1.01]"
+                                  : "border-slate-200 bg-white hover:border-[#8B4F23]/40 hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-semibold text-[#2D1E0F] flex items-center gap-2">
+                                    {pacote.emoji && <span>{pacote.emoji}</span>}
+                                    <span>{pacote.nome}</span>
+                                    {indisponivelNoDia && (
+                                      <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
+                                        Esgotado
+                                      </span>
+                                    )}
+                                  </p>
+                                  <div className="mt-2 space-y-0.5">
+                                    {tiposClientesAtivos.map((tipo) => {
+                                      const preco = obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote);
+                                      if (preco <= 0) return null;
+                                      return (
+                                        <p key={obterChaveTipo(tipo)} className="text-xs text-slate-500">
+                                          {tipo.nome}: {formatCurrency(preco)}
+                                        </p>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                                <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                                  selecionado ? "border-[#8B4F23] bg-[#8B4F23]" : "border-slate-300 bg-white"
+                                }`}>
+                                  {selecionado && (
+                                    <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                    </svg>
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Combo detectado automaticamente */}
+                    {comboAtivo && (
+                      <div className="rounded-2xl border border-[#E0B13C] bg-gradient-to-br from-[#E0B13C]/15 via-[#E0B13C]/5 to-white p-4 flex items-start gap-3 shadow-md">
+                        <span className="text-2xl">🎉</span>
+                        <div className="flex-1">
+                          <p className="text-sm font-bold text-[#8B4F23]">Combo aplicado: {comboAtivo.nome}</p>
+                          <p className="text-xs text-slate-600 mt-0.5">
+                            {hasCustomComboPricing(comboAtivo)
+                              ? describeComboValores(comboAtivo) || "Valores personalizados aplicados"
+                              : comboAtivo.preco && comboAtivo.preco > 0
+                              ? `Valor especial: ${formatCurrency(comboAtivo.preco)} por pessoa`
+                              : comboAtivo.desconto && comboAtivo.desconto > 0
+                              ? `${comboAtivo.desconto}% de desconto na sua reserva`
+                              : "Condições especiais aplicadas"}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {formErrors.pacotes && (
+                      <p className="text-sm text-red-600">{formErrors.pacotes}</p>
+                    )}
+                  </div>
+                )}
+
 
                 {/* ============ ETAPA 2 — HORÁRIO + PERGUNTAS POR PACOTE ============ */}
                 {etapa === 2 && (
@@ -3080,55 +2697,59 @@ export function BookingSection() {
                 {etapa === 3 && (
                   <>
 
-            <div ref={participantesRef} className="mb-6 space-y-3">
-              <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-white to-[#FAF7F2] p-5 shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[#8B4F23]/70 mb-3">Resumo do seu grupo</p>
-                <div className="space-y-2.5">
-                  {gruposAtivos.map((grupo) => {
-                    const totalNoGrupo = Object.values(grupo.participantesPorTipo).reduce((a, b) => a + Number(b), 0);
-                    if (totalNoGrupo === 0) return null;
-                    const nome = grupo.tipo === "combo"
-                      ? combos.find((c) => c.id === grupo.refId)?.nome ?? "Combo"
-                      : `Somente ${pacotes.find((p) => p.id === grupo.refId)?.nome ?? "Atividade"}`;
-                    const detalhes = tiposClientesAtivos
-                      .map((tipo) => {
-                        const chave = obterChaveTipo(tipo);
-                        const q = Number(grupo.participantesPorTipo[chave] ?? 0);
-                        return q > 0 ? `${q} ${tipo.nome}` : null;
-                      })
-                      .filter(Boolean)
-                      .join(" · ");
-                    return (
-                      <div key={grupo.chave} className="flex items-start justify-between gap-3 py-2.5 border-b border-slate-100 last:border-b-0">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-[#2D1E0F]">{nome}</p>
-                          <p className="text-xs text-slate-500 mt-0.5">{detalhes}</p>
-                        </div>
-                        <span className="inline-flex items-center justify-center min-w-[2rem] h-7 px-2.5 rounded-full bg-[#8B4F23]/10 text-[#8B4F23] text-xs font-bold">
-                          {totalNoGrupo}
-                        </span>
+            <div ref={participantesRef} className="mb-6">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
+                Quantas pessoas <span className="text-red-500">*</span>
+              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {tiposClientesAtivos.map((tipo) => {
+                  const chave = obterChaveTipo(tipo);
+                  const valor = Number(obterValorMapa(participantesPorTipo, tipo) ?? 0);
+                  return (
+                    <div
+                      key={chave}
+                      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                    >
+                      <p className="text-sm font-semibold text-slate-700">{tipo.nome}</p>
+                      {tipo.descricao && (
+                        <p className="text-xs text-slate-500 mt-0.5">{tipo.descricao}</p>
+                      )}
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setParticipantesPorTipo((prev) => ({ ...prev, [chave]: Math.max(0, Number(prev[chave] ?? 0) - 1) }));
+                            setFieldError("participantes");
+                          }}
+                          disabled={valor <= 0}
+                          className="w-10 h-10 rounded-lg border border-slate-300 bg-white text-xl font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          aria-label={`Diminuir ${tipo.nome}`}
+                        >−</button>
+                        <span className="min-w-[40px] text-center text-2xl font-bold text-slate-800 tabular-nums">{valor}</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setParticipantesPorTipo((prev) => ({ ...prev, [chave]: Number(prev[chave] ?? 0) + 1 }));
+                            setFieldError("participantes");
+                          }}
+                          className="w-10 h-10 rounded-lg border border-slate-300 bg-white text-xl font-semibold text-slate-700 hover:bg-slate-50"
+                          aria-label={`Aumentar ${tipo.nome}`}
+                        >+</button>
                       </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-slate-700">Total geral</span>
-                  <span className="text-base font-bold text-[#8B4F23]">
-                    {totalParticipantesSelecionados} pessoa(s) · {formatCurrency(calcularTotal())}
-                  </span>
-                </div>
+                    </div>
+                  );
+                })}
               </div>
 
-              <button
-                type="button"
-                onClick={() => setEtapa(1)}
-                className="text-xs text-[#8B4F23] underline hover:text-[#A05D2B]"
-              >
-                Voltar para alterar o grupo
-              </button>
+              {totalParticipantesSelecionados > 0 && (
+                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 flex items-center justify-between">
+                  <span className="text-sm font-medium text-emerald-800">{totalParticipantesSelecionados} pessoa(s)</span>
+                  <span className="text-base font-bold text-[#8B4F23]">{formatCurrency(calcularTotal())}</span>
+                </div>
+              )}
 
               {formErrors.participantes && (
-                <p className="text-sm text-red-600">{formErrors.participantes}</p>
+                <p className="mt-2 text-sm text-red-600">{formErrors.participantes}</p>
               )}
             </div>
 
@@ -3353,7 +2974,7 @@ export function BookingSection() {
 
                 {/* ============ ETAPA 4 — MÉTODO + PAGAMENTO ============ */}
                 {etapa === 4 && subEtapaPagamento === "metodo" && (
-                  <div className="space-y-5">
+                  <div ref={paymentMethodRef} className="scroll-mt-24 space-y-5">
                     <div className="text-center mb-3">
                       <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#8B4F23]/70 mb-1">Falta pouco</p>
                       <h3 className="text-xl font-bold text-[#2D1E0F]">Como você prefere pagar?</h3>
@@ -3370,7 +2991,7 @@ export function BookingSection() {
                           <button
                             key={m.id}
                             type="button"
-                            onClick={() => setFormaPagamento(m.id as "PIX" | "CREDIT_CARD")}
+                            onClick={() => handleSelecionarFormaPagamento(m.id as "PIX" | "CREDIT_CARD")}
                             className={`group relative rounded-2xl border-2 p-5 text-left transition-all duration-200 ${
                               ativo
                                 ? "border-[#8B4F23] bg-gradient-to-br from-[#8B4F23]/8 to-[#E0B13C]/8 shadow-md"
@@ -3412,7 +3033,7 @@ export function BookingSection() {
                 )}
 
                 {etapa === 4 && subEtapaPagamento === "form" && (
-                  <>
+                  <div ref={paymentFormRef} className="scroll-mt-24">
                     {/* Dados Pessoais */}
                     <div className="mb-6">
                       <h3 className="text-sm font-bold text-slate-800 mb-1">Seus dados</h3>
@@ -3518,7 +3139,7 @@ export function BookingSection() {
               <label className="block text-sm font-semibold text-slate-700 mb-3">
                 Forma de Pagamento
               </label>
-              <div className="grid grid-cols-2 gap-3 max-w-sm">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:max-w-sm">
                 <label className={`flex items-center gap-3 rounded-xl border-2 p-4 cursor-pointer transition-all duration-200 ${
                   formaPagamento === "CREDIT_CARD" ? "border-[#8B4F23] bg-[#8B4F23]/5 shadow-sm" : "border-slate-200 bg-white hover:border-[#8B4F23]/30"
                 }`}>
@@ -3555,18 +3176,18 @@ export function BookingSection() {
             </div>
 
             {formaPagamento === "CREDIT_CARD" && (
-              <div ref={cartaoRef} className="mb-6 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div ref={cartaoRef} className="mb-6 scroll-mt-24 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
                 {/* ── Preview do cartão ── */}
-                <div className="bg-gradient-to-br from-slate-800 to-slate-900 px-5 py-5">
-                  <div className="relative mx-auto w-full max-w-[340px] aspect-[1.586/1] overflow-hidden rounded-2xl bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 p-5 text-white shadow-xl">
+                <div className="bg-gradient-to-br from-slate-800 to-slate-900 px-3 py-4 sm:px-5 sm:py-5">
+                  <div className="relative mx-auto w-full max-w-[340px] aspect-[1.586/1] overflow-hidden rounded-2xl bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 p-4 text-white shadow-xl sm:p-5">
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/50">Crédito</span>
                       <span className={`inline-flex items-center rounded-full px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide ${cartaoBrandInfo ? cartaoBrandInfo.badgeClass : "bg-white/10 text-white/50"}`}>
                         {cartaoBrandInfo ? cartaoBrandInfo.label : "Bandeira"}
                       </span>
                     </div>
-                    <div className="mt-6 font-mono text-base font-semibold tracking-[0.18em] text-white sm:text-lg sm:tracking-[0.22em]">
+                    <div className="mt-5 font-mono text-[13px] font-semibold tracking-[0.08em] text-white sm:mt-6 sm:text-lg sm:tracking-[0.22em]">
                       {cartaoNumeroExibicao}
                     </div>
                     <div className="mt-4 flex items-end justify-between gap-2">
@@ -3663,7 +3284,7 @@ export function BookingSection() {
                   </div>
 
                   {/* Endereço de cobrança */}
-                  <div className="mt-1 rounded-xl border border-slate-100 bg-slate-50 p-4 space-y-3">
+                  <div className="mt-1 rounded-xl border border-slate-100 bg-slate-50 p-3 space-y-3 sm:p-4">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Endereço de cobrança</p>
 
                     {/* CEP + Rua */}
@@ -3719,8 +3340,8 @@ export function BookingSection() {
                     </div>
 
                     {/* Bairro + Cidade + UF */}
-                    <div className="grid grid-cols-[1fr_4rem] gap-3 sm:grid-cols-[1fr_1fr_5rem]">
-                      <label className="col-span-2 sm:col-span-1 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_5rem]">
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
                         Bairro
                         <input
                           type="text"
@@ -3760,7 +3381,7 @@ export function BookingSection() {
                 </div>
               </div>
             )}
-                  </>
+                  </div>
                 )}
 
                 {etapa === 4 && <div className="mb-6 lg:hidden">{resumoCardMobile}</div>}
@@ -3778,7 +3399,7 @@ export function BookingSection() {
                     Voltar
                   </button>
 
-                  {etapa < 4 ? (
+                  {etapa < 4 || subEtapaPagamento === "metodo" ? (
                     <button
                       type="button"
                       onClick={handleAvancarEtapa}
@@ -3799,6 +3420,8 @@ export function BookingSection() {
                         ? "Processando..."
                         : bloqueiaEnvioCartao
                         ? "Aguardando confirmação..."
+                        : formaPagamento === "PIX"
+                        ? "Gerar QR Code PIX"
                         : "Fazer Reserva"}
                     </button>
                   )}
@@ -3840,38 +3463,7 @@ export function BookingSection() {
                 ))}
               </div>
 
-              {gruposAtivos.length > 0 ? (
-                <div className="relative max-w-3xl mx-auto mb-6 rounded-2xl bg-white/70 backdrop-blur-sm border border-emerald-100 p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Segmentação do grupo</p>
-                  <div className="space-y-2">
-                    {gruposAtivos.map((grupo) => {
-                      const totalNoGrupo = Object.values(grupo.participantesPorTipo).reduce((a, b) => a + Number(b), 0);
-                      const nome = grupo.tipo === "combo"
-                        ? combos.find((c) => c.id === grupo.refId)?.nome ?? "Combo"
-                        : `Somente ${pacotes.find((p) => p.id === grupo.refId)?.nome ?? "Atividade"}`;
-                      const detalhes = tiposClientesAtivos
-                        .map((tipo) => {
-                          const chave = obterChaveTipo(tipo);
-                          const q = Number(grupo.participantesPorTipo[chave] ?? 0);
-                          return q > 0 ? `${q} ${tipo.nome}` : null;
-                        })
-                        .filter(Boolean)
-                        .join(" · ");
-                      return (
-                        <div key={grupo.chave} className="flex items-center justify-between gap-3 py-2 border-b border-emerald-100/40 last:border-b-0">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-[#2D1E0F]">{nome}</p>
-                            <p className="text-xs text-slate-500 mt-0.5">{detalhes}</p>
-                          </div>
-                          <span className="inline-flex items-center justify-center min-w-[2rem] h-6 px-2 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold">
-                            {totalNoGrupo}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : pacotesResumo.length > 0 ? (
+              {pacotesResumo.length > 0 && (
                 <div className="relative max-w-3xl mx-auto mb-6 rounded-2xl bg-white/70 backdrop-blur-sm border border-emerald-100 p-4">
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Atividades</p>
                   <div className="flex flex-wrap gap-2">
@@ -3881,8 +3473,13 @@ export function BookingSection() {
                       </span>
                     ))}
                   </div>
+                  {comboAtivo && (
+                    <p className="mt-2 text-xs font-semibold text-[#E0B13C]">
+                      🎉 Combo: {comboAtivo.nome}
+                    </p>
+                  )}
                 </div>
-              ) : null}
+              )}
 
               <div className="relative flex flex-col sm:flex-row gap-3 justify-center max-w-md mx-auto">
                 <a
@@ -3909,7 +3506,7 @@ export function BookingSection() {
           {cartaoResultado?.status !== "success" && (checkoutUrl || pixKey || cartaoResultado) && (
             <div
               ref={paymentCardRef}
-              className="relative mt-8 overflow-hidden rounded-3xl p-5 shadow-2xl sm:p-8"
+              className="relative mt-8 w-full min-w-0 overflow-hidden rounded-2xl p-4 shadow-2xl sm:rounded-3xl sm:p-8"
               style={{
                 background: (checkoutUrl || pixKey)
                   ? 'linear-gradient(135deg, #1a6b3a 0%, #145c30 100%)'
@@ -3919,8 +3516,8 @@ export function BookingSection() {
             >
               {(checkoutUrl || pixKey) ? (
                 /* ── PIX inline ── */
-                <div className="flex flex-col items-center gap-5">
-                  <div className="flex items-center gap-2">
+                <div className="flex w-full min-w-0 flex-col items-center gap-5">
+                  <div className="flex items-center gap-2 text-center">
                     <span className="text-2xl">⚡</span>
                     <h3 className="text-xl font-bold text-white">Pague com PIX</h3>
                   </div>
@@ -3930,7 +3527,7 @@ export function BookingSection() {
                       <img
                         src={qrCodeImage}
                         alt="QR Code PIX"
-                        className="mx-auto block h-40 w-40 sm:h-52 sm:w-52"
+                        className="mx-auto block h-44 w-44 sm:h-52 sm:w-52"
                       />
                     </div>
                   ) : checkoutUrl ? (
@@ -3957,8 +3554,8 @@ export function BookingSection() {
                       </p>
 
                       {/* Copia-e-cola */}
-                      <div className="w-full max-w-sm">
-                        <div className="rounded-xl bg-white/10 border border-white/20 px-4 py-3">
+                      <div className="w-full max-w-sm min-w-0">
+                        <div className="max-h-28 overflow-y-auto rounded-xl border border-white/20 bg-white/10 px-3 py-3 sm:px-4">
                           <p className="font-mono text-xs break-all text-white/90 leading-relaxed select-all">
                             {pixKey}
                           </p>
