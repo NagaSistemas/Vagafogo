@@ -3458,6 +3458,19 @@ export function BookingSection() {
                   {ehPet && (
                     <div ref={petRef} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                       <h4 className="text-base font-bold text-[#2D1E0F] mb-3">Vai levar pet? <span className="text-red-500">*</span></h4>
+
+                      {/* Aviso de pacotes que não aceitam pet */}
+                      {getPetMessage() && (
+                        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
+                          <svg className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 2L1 21h22L12 2zm0 4l7.53 13H4.47L12 6zm-1 5v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
+                          </svg>
+                          <p className="text-[11px] text-amber-900 leading-snug">
+                            <strong>Atenção:</strong> {getPetMessage()}
+                          </p>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-2 gap-3">
                         <label className={`flex items-center gap-2 rounded-xl border-2 p-3 cursor-pointer transition-all ${
                           temPet === true ? "border-[#8B4F23] bg-[#8B4F23]/5" : "border-slate-200 bg-white hover:border-[#8B4F23]/30"
@@ -3480,11 +3493,6 @@ export function BookingSection() {
                           </div>
                         </label>
                       </div>
-                      {temPet === true && getPetMessage() && (
-                        <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded-lg">
-                          <p className="text-xs text-red-700">⚠️ {getPetMessage()}</p>
-                        </div>
-                      )}
                       {((obterValorPorTipoNome(participantesPorTipo, tiposClientesAtivos, "bariat") ?? 0) > 0) && (
                         <div className="mt-3 p-2.5 bg-orange-50 border border-orange-200 rounded-lg">
                           <p className="text-xs text-orange-700">
