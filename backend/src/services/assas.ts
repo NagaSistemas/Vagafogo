@@ -459,6 +459,8 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
       }
     : undefined;
 
+  // O Asaas aceita 'state' e 'addressState' como alias — enviamos ambos por seguranca.
+  const ufNormalizada = limparTexto(creditCardHolderInfo?.state).toUpperCase();
   const creditCardHolderNormalizado = creditCardHolderInfo
     ? {
         name: limparTexto(creditCardHolderInfo.name) || limparTexto(nome),
@@ -470,8 +472,10 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
         addressComplement: limparTexto(creditCardHolderInfo.addressComplement) || undefined,
         province: limparTexto(creditCardHolderInfo.province),
         city: limparTexto(creditCardHolderInfo.city),
-        state: limparTexto(creditCardHolderInfo.state).toUpperCase(),
+        state: ufNormalizada,
+        addressState: ufNormalizada,
         phone: somenteNumeros(creditCardHolderInfo.phone || telefoneLimpo),
+        mobilePhone: somenteNumeros(creditCardHolderInfo.phone || telefoneLimpo),
       }
     : undefined;
 
@@ -826,6 +830,18 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
     if (billingType === "CREDIT_CARD" && creditCardNormalizado && creditCardHolderNormalizado) {
       paymentPayload.creditCard = creditCardNormalizado;
       paymentPayload.creditCardHolderInfo = creditCardHolderNormalizado;
+      // Log do holder info (sem dados do cartao) para debug de erros de validacao Asaas
+      console.log("INFO creditCardHolderInfo enviado:", {
+        name: creditCardHolderNormalizado.name,
+        email: creditCardHolderNormalizado.email,
+        cpfLen: creditCardHolderNormalizado.cpfCnpj?.length,
+        postalCode: creditCardHolderNormalizado.postalCode,
+        province: creditCardHolderNormalizado.province,
+        city: creditCardHolderNormalizado.city,
+        state: creditCardHolderNormalizado.state,
+        addressState: (creditCardHolderNormalizado as any).addressState,
+        phone: creditCardHolderNormalizado.phone?.length,
+      });
     }
 
     console.log("INFO Criando pagamento no Asaas:", {
