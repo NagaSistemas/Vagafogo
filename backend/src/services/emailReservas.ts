@@ -39,7 +39,8 @@ type ResultadoEmailReserva =
         | "EMAIL_AUSENTE"
         | "DISABLED"
         | "MISSING_CONFIG"
-        | "LIMITE_ATINGIDO";
+        | "LIMITE_ATINGIDO"
+        | "RESERVA_MANUAL";
     };
 
 type ResultadoReenvioEmail =
@@ -53,7 +54,8 @@ type ResultadoReenvioEmail =
         | "DISABLED"
         | "MISSING_CONFIG"
         | "LIMITE_ATINGIDO"
-        | "EMAIL_EXCLUIDO_DA_FILA";
+        | "EMAIL_EXCLUIDO_DA_FILA"
+        | "RESERVA_MANUAL";
       uso: ReturnType<typeof calcularUsoEmail>;
     };
 
@@ -260,6 +262,9 @@ const registrarLimiteEmailAtingido = async (error: unknown) => {
   });
 };
 
+// Reservas manuais sao pagas presencialmente: nao recebem email automatico.
+const reservaEhManual = (reserva: ReservaEmail): boolean => reserva?.origem === "manual";
+
 function obterStatusFilaEmail(reserva: ReservaEmail): EmailFilaStatus {
   if (reserva.emailEnviado === true) return "enviado";
 
@@ -293,6 +298,11 @@ export async function enviarEmailConfirmacaoReserva(
 
   if (reservaAtual.emailEnviado === true) {
     return { enviado: false, motivo: "JA_ENVIADO" };
+  }
+
+  // Reservas pagas presencialmente (manuais) nao recebem email automatico
+  if (reservaEhManual(reservaAtual)) {
+    return { enviado: false, motivo: "RESERVA_MANUAL" };
   }
 
   const email =
@@ -405,11 +415,18 @@ export async function processarEmailsConfirmacaoPendentes(
   type Candidato = { id: string; reserva: ReservaEmail };
   const candidatos: Candidato[] = [];
   let ignoradosPorData = 0;
+  let ignoradosPorManual = 0;
 
   for (const docSnap of snapshot.docs) {
     const reserva = docSnap.data() as ReservaEmail;
     if (reserva.emailEnviado === true) continue;
     if (reserva.emailFilaExcluido === true) continue;
+
+    // Reservas manuais sao pagas presencialmente — nao enviar email automatico
+    if (reservaEhManual(reserva)) {
+      ignoradosPorManual += 1;
+      continue;
+    }
 
     if (corteData) {
       const dataReserva = obterDataReservaISO(reserva.data);
@@ -424,7 +441,7 @@ export async function processarEmailsConfirmacaoPendentes(
 
   const lote = candidatos.slice(0, limite);
   console.log(
-    `[email] processamento manual: ${candidatos.length} candidato(s) (futuras), ${ignoradosPorData} ignorada(s) por data antiga, processando ${lote.length} (limite ${limite}).`,
+    `[email] processamento manual: ${candidatos.length} candidato(s) (futuras), ${ignoradosPorData} ignorada(s) por data antiga, ${ignoradosPorManual} ignorada(s) por origem manual, processando ${lote.length} (limite ${limite}).`,
   );
 
   let emailsEnviados = 0;
@@ -473,6 +490,7 @@ export async function processarEmailsConfirmacaoPendentes(
     falhas,
     candidatos: candidatos.length,
     ignoradosPorData,
+    ignoradosPorManual,
     interrompidoPorConexao,
     erroGeral,
   };
@@ -491,6 +509,10 @@ export async function tentarReenviarEmailConfirmacaoReserva(
 
   if (item.reserva.emailFilaExcluido === true) {
     return { enviado: false, motivo: "EMAIL_EXCLUIDO_DA_FILA", uso: usoAntes };
+  }
+
+  if (reservaEhManual(item.reserva)) {
+    return { enviado: false, motivo: "RESERVA_MANUAL", uso: usoAntes };
   }
 
   if (item.reserva.emailEnviado === true) {
@@ -592,12 +614,19 @@ export async function listarFilaEmailsConfirmacao(limit = 200) {
   let pendentes = 0;
   let erros = 0;
   let semEmail = 0;
+  let manuais = 0;
 
   const uso = await obterUsoEmailAtual(reservasPagas.map(({ reserva }) => reserva));
 
   const itens = reservasPagas
     .map(({ id, reserva }) => {
       if (reserva.emailFilaExcluido === true) return null;
+
+      // Reservas manuais (pagas presencialmente) nao vao para fila de email
+      if (reservaEhManual(reserva)) {
+        manuais += 1;
+        return null;
+      }
 
       const statusEmail = obterStatusFilaEmail(reserva);
 
@@ -650,6 +679,7 @@ export async function listarFilaEmailsConfirmacao(limit = 200) {
     pendentes,
     erros,
     semEmail,
+    manuais,
     uso,
     itens,
   };
