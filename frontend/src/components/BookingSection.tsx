@@ -1048,51 +1048,44 @@ export function BookingSection() {
     );
   }, [combos, selectedPackages]);
 
+  // Grupos de participação simplificados: sempre 1 grupo único.
+  // - Se a seleção bate com um combo: grupo combo (com preço do combo)
+  // - Senão: grupo "geral" com todos os pacotes agregados (soma os preços)
   const gruposParticipacao = useMemo<GrupoParticipacao[]>(() => {
     if (selectedPackages.length === 0) return [];
-    const idsSelecionados = new Set(selectedPackages);
-    const grupos: GrupoParticipacao[] = [];
 
-    combos
-      .filter(
-        (combo) =>
-          combo.id &&
-          combo.ativo &&
-          combo.pacoteIds.length > 1 &&
-          combo.pacoteIds.every((id) => idsSelecionados.has(id) && pacotesPorId.has(id))
-      )
-      .sort((a, b) => b.pacoteIds.length - a.pacoteIds.length)
-      .forEach((combo) => {
-        const nomes = combo.pacoteIds
-          .map((id) => pacotesPorId.get(id)?.nome)
-          .filter(Boolean)
-          .join(" + ");
-        grupos.push({
-          chave: `combo:${combo.id}`,
+    if (comboAtivo) {
+      const nomes = comboAtivo.pacoteIds
+        .map((id) => pacotesPorId.get(id)?.nome)
+        .filter(Boolean)
+        .join(" + ");
+      return [
+        {
+          chave: `combo:${comboAtivo.id}`,
           tipo: "combo",
-          refId: combo.id!,
-          nome: combo.nome,
-          descricao: nomes ? `Participa de ${nomes}` : "Participa do combo completo",
-          pacoteIds: combo.pacoteIds,
-          combo,
-        });
-      });
+          refId: comboAtivo.id!,
+          nome: comboAtivo.nome,
+          descricao: nomes ? `Inclui ${nomes}` : "Combo completo",
+          pacoteIds: comboAtivo.pacoteIds,
+          combo: comboAtivo,
+        },
+      ];
+    }
 
-    selectedPacotes.forEach((pacote) => {
-      if (!pacote.id) return;
-      grupos.push({
-        chave: `pacote:${pacote.id}`,
+    // Sem combo: 1 grupo único agregando todos os pacotes selecionados
+    const nomes = selectedPacotes.map((p) => p.nome).join(" + ");
+    return [
+      {
+        chave: "geral",
         tipo: "pacote",
-        refId: pacote.id,
-        nome: `Somente ${pacote.nome}`,
-        descricao: `Para quem vai participar apenas de ${pacote.nome}`,
-        pacoteIds: [pacote.id],
-        pacote,
-      });
-    });
-
-    return grupos;
-  }, [combos, pacotesPorId, selectedPackages, selectedPacotes]);
+        refId: selectedPacotes[0]?.id ?? selectedPackages[0],
+        nome: selectedPacotes.length === 1 ? selectedPacotes[0].nome : "Reserva",
+        descricao: nomes,
+        pacoteIds: selectedPackages,
+        pacote: selectedPacotes[0],
+      },
+    ];
+  }, [comboAtivo, pacotesPorId, selectedPackages, selectedPacotes]);
 
   useEffect(() => {
     setParticipantesPorGrupo((prev) => {
@@ -1584,11 +1577,16 @@ export function BookingSection() {
         : totalPacotes;
     }
 
-    if (grupo.tipo === "pacote" && grupo.pacote) {
+    if (grupo.tipo === "pacote") {
       return tiposClientesAtivos.reduce((acc, tipo) => {
         const quantidade = Number(obterValorMapa(quantidades, tipo) ?? 0);
-        const preco = obterPrecoPorTipo(grupo.pacote?.precosPorTipo, tipo, grupo.pacote);
-        return acc + quantidade * preco;
+        // Soma o preço do tipo em CADA pacote do grupo (suporta múltiplos pacotes sem combo)
+        let precoUnitario = 0;
+        grupo.pacoteIds.forEach((pacoteId) => {
+          const p = pacotesPorId.get(pacoteId);
+          if (p) precoUnitario += obterPrecoPorTipo(p.precosPorTipo, tipo, p);
+        });
+        return acc + quantidade * precoUnitario;
       }, 0);
     }
 
@@ -1597,8 +1595,14 @@ export function BookingSection() {
 
   // Preço unitário (por pessoa) de um tipo de cliente no contexto de um grupo (combo ou pacote).
   const precoPorTipoNoGrupo = (grupo: GrupoParticipacao, tipo: TipoCliente): number => {
-    if (grupo.tipo === "pacote" && grupo.pacote) {
-      return obterPrecoPorTipo(grupo.pacote.precosPorTipo, tipo, grupo.pacote);
+    if (grupo.tipo === "pacote") {
+      // Soma o preço daquele tipo em TODOS os pacotes do grupo
+      let total = 0;
+      grupo.pacoteIds.forEach((pacoteId) => {
+        const p = pacotesPorId.get(pacoteId);
+        if (p) total += obterPrecoPorTipo(p.precosPorTipo, tipo, p);
+      });
+      return total;
     }
     if (grupo.tipo === "combo" && grupo.combo) {
       const combo = grupo.combo;
@@ -2113,11 +2117,6 @@ export function BookingSection() {
       setSubEtapaPagamento("metodo");
       return;
     }
-    // Etapa 3 (Participantes): retrocede sub-passo antes de sair
-    if (etapa === 3 && subPassoParticipantes > 0) {
-      setSubPassoParticipantes(subPassoParticipantes - 1);
-      return;
-    }
     setEtapa((prev) => (prev > 0 ? ((prev - 1) as EtapaReserva) : prev));
   };
 
@@ -2184,12 +2183,6 @@ export function BookingSection() {
     }
 
     if (etapa === 3) {
-      // Se ainda há sub-passos de Participantes, avança o sub-passo
-      const totalSubPassos = gruposParticipacao.length + 1; // grupos + pet
-      if (subPassoParticipantes < totalSubPassos - 1) {
-        setSubPassoParticipantes(subPassoParticipantes + 1);
-        return;
-      }
       const validation = validateForm(3);
       if (!validation.ok) {
         setEtapa(etapaParaPrimeiroErro(validation.errors));
@@ -3343,108 +3336,32 @@ export function BookingSection() {
                   </div>
                 )}
 
-                {/* ============ ETAPA 3 — REVISÃO + PET ============ */}
-                {etapa === 3 && (() => {
-                  // Sub-passos = um por grupo + sub-passo "pet" no final
-                  const totalSubPassos = gruposParticipacao.length + 1; // grupos + pet
-                  const idx = Math.max(0, Math.min(subPassoParticipantes, totalSubPassos - 1));
-                  const ehPet = idx === gruposParticipacao.length;
-                  const grupo = !ehPet ? gruposParticipacao[idx] : null;
+                {/* ============ ETAPA 3 — PARTICIPANTES + PET (simples) ============ */}
+                {etapa === 3 && gruposParticipacao[0] && (
+                  <div ref={participantesRef} className="space-y-4">
+                    {/* Banner se há combo aplicado */}
+                    {comboAtivo && (
+                      <div className="rounded-xl border border-[#E0B13C] bg-gradient-to-br from-[#E0B13C]/12 via-white to-[#8B4F23]/5 px-3 py-2.5 flex items-start gap-2 shadow-sm">
+                        <span className="text-lg flex-shrink-0">🎉</span>
+                        <div className="text-[11px] leading-snug">
+                          <p className="font-bold text-[#8B4F23]">Combo aplicado: {comboAtivo.nome}</p>
+                          <p className="text-slate-600 mt-0.5">Os preços abaixo já consideram o desconto do combo.</p>
+                        </div>
+                      </div>
+                    )}
 
-                  return (
-                <div ref={participantesRef}>
-                  {/* Stepper bolinhas conectadas */}
-                  {totalSubPassos > 1 && (
-                    <div className="relative flex items-center justify-between px-1 mb-4">
-                      <div className="absolute left-2.5 right-2.5 top-1/2 -translate-y-1/2 h-0.5 bg-slate-200 rounded-full" aria-hidden="true" />
-                      <div
-                        className="absolute left-2.5 top-1/2 -translate-y-1/2 h-0.5 rounded-full transition-all duration-500"
-                        style={{
-                          width: `calc((100% - 1.25rem) * ${idx / Math.max(totalSubPassos - 1, 1)})`,
-                          background: "linear-gradient(90deg, #8B4F23, #A05D2B)",
-                        }}
-                        aria-hidden="true"
-                      />
-                      {Array.from({ length: totalSubPassos }).map((_, i) => {
-                        const ativo = i === idx;
-                        const concluido = i < idx;
-                        const liberado = i <= idx;
-                        const ehUltimo = i === totalSubPassos - 1;
-                        return (
-                          <button
-                            key={i}
-                            type="button"
-                            disabled={!liberado}
-                            onClick={() => liberado && setSubPassoParticipantes(i)}
-                            className="relative z-10 flex flex-col items-center disabled:cursor-not-allowed"
-                          >
-                            <span
-                              className={`flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold transition-all duration-300 ring-2 ${
-                                ativo
-                                  ? "bg-gradient-to-br from-[#8B4F23] to-[#A05D2B] text-white ring-[#E0B13C]/40 shadow scale-110"
-                                  : concluido
-                                  ? "bg-[#8B4F23] text-white ring-white"
-                                  : "bg-white text-slate-400 ring-white border border-slate-200"
-                              }`}
-                            >
-                              {concluido ? (
-                                <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
-                              ) : ehUltimo ? "🐾" : i + 1}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {/* Total compacto */}
-                  {totalParticipantesSelecionados > 0 && (
-                    <div className="mb-3 rounded-xl bg-emerald-50/60 border border-emerald-200 px-3 py-2 flex items-center justify-between">
-                      <span className="text-xs font-semibold text-emerald-800">
-                        {totalParticipantesSelecionados} pessoa(s) já no grupo
-                      </span>
-                      <span className="text-sm font-bold text-[#8B4F23]">{formatCurrency(calcularTotal())}</span>
-                    </div>
-                  )}
-
-                  {/* Sub-passo de grupo (combo ou pacote individual) */}
-                  {grupo && (
+                    {/* Seletor único de participantes por tipo */}
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <div className="mb-3">
-                        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider mb-1.5 ${
-                          grupo.tipo === "combo"
-                            ? "bg-[#E0B13C]/15 text-[#8B4F23] border border-[#E0B13C]/30"
-                            : "bg-slate-100 text-slate-600 border border-slate-200"
-                        }`}>
-                          {grupo.tipo === "combo" ? "🎉 Combo" : "Individual"}
-                        </span>
-                        <h4 className="text-base font-bold text-[#2D1E0F]">{grupo.nome}</h4>
-                        <p className="text-xs text-slate-500 mt-0.5">{grupo.descricao}</p>
-                      </div>
-
-                      {/* Card de atenção */}
-                      <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
-                        <svg className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 24 24">
-                          <path d="M12 2L1 21h22L12 2zm0 4l7.53 13H4.47L12 6zm-1 5v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
-                        </svg>
-                        <p className="text-[11px] text-amber-900 leading-snug">
-                          <strong>Atenção:</strong>{" "}
-                          {grupo.tipo === "combo"
-                            ? <>Preencha aqui <strong>somente</strong> as pessoas que vão fazer o combo <strong>{grupo.nome}</strong> (todas as atividades juntas).</>
-                            : <>Preencha aqui <strong>somente</strong> as pessoas que vão fazer <strong>apenas {grupo.nome.replace(/^Somente\s/i, "")}</strong> (sem o combo).</>
-                          }
-                        </p>
-                      </div>
-
-                      <div className="space-y-2 pt-3 border-t border-slate-100">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-3">
+                        Quantos vão?
+                      </p>
+                      <div className="space-y-2.5">
                         {tiposClientesAtivos.map((tipo) => {
-                          const chave = obterChaveTipo(tipo);
+                          const grupo = gruposParticipacao[0];
                           const valor = Number(obterValorMapa(participantesPorGrupo[grupo.chave] ?? {}, tipo) ?? 0);
                           const precoUnitario = precoPorTipoNoGrupo(grupo, tipo);
                           return (
-                            <div key={chave} className="flex items-center justify-between gap-2">
+                            <div key={obterChaveTipo(tipo)} className="flex items-center justify-between gap-2">
                               <div className="flex-1 min-w-0">
                                 <div className="flex items-baseline gap-1.5 flex-wrap">
                                   <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
@@ -3478,15 +3395,21 @@ export function BookingSection() {
                           );
                         })}
                       </div>
-                    </div>
-                  )}
 
-                  {/* Sub-passo Pet */}
-                  {ehPet && (
+                      {totalParticipantesSelecionados > 0 && (
+                        <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                          <span className="text-xs font-semibold text-slate-600">
+                            {totalParticipantesSelecionados} pessoa(s)
+                          </span>
+                          <span className="text-base font-bold text-[#8B4F23]">{formatCurrency(calcularTotal())}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Pet */}
                     <div ref={petRef} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                       <h4 className="text-base font-bold text-[#2D1E0F] mb-3">Vai levar pet? <span className="text-red-500">*</span></h4>
 
-                      {/* Aviso de pacotes que não aceitam pet */}
                       {getPetMessage() && (
                         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
                           <svg className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 24 24">
@@ -3520,6 +3443,7 @@ export function BookingSection() {
                           </div>
                         </label>
                       </div>
+
                       {((obterValorPorTipoNome(participantesPorTipo, tiposClientesAtivos, "bariat") ?? 0) > 0) && (
                         <div className="mt-3 p-2.5 bg-orange-50 border border-orange-200 rounded-lg">
                           <p className="text-xs text-orange-700">
@@ -3531,36 +3455,14 @@ export function BookingSection() {
                         <p className="mt-2 text-sm text-red-600">{formErrors.pet}</p>
                       )}
                     </div>
-                  )}
 
-                  {/* Navegação entre sub-passos */}
-                  <div className="mt-4 flex gap-2">
-                    {idx > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setSubPassoParticipantes(idx - 1)}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                      >
-                        ← Anterior
-                      </button>
-                    )}
-                    {idx < totalSubPassos - 1 && (
-                      <button
-                        type="button"
-                        onClick={() => setSubPassoParticipantes(idx + 1)}
-                        className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full bg-[#8B4F23] text-white px-3 py-2 text-sm font-semibold hover:bg-[#A05D2B]"
-                      >
-                        Próxima →
-                      </button>
+                    {formErrors.participantes && (
+                      <p className="text-sm text-red-600">{formErrors.participantes}</p>
                     )}
                   </div>
+                )}
 
-                  {formErrors.participantes && (
-                    <p className="mt-2 text-sm text-red-600">{formErrors.participantes}</p>
-                  )}
-                </div>
-                  );
-                })()}
+                {/* Bloco legacy desativado */}
                 {false && (
                   <>
 
