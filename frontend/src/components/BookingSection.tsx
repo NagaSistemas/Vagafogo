@@ -2044,7 +2044,7 @@ export function BookingSection() {
     },
     {
       title: "Data",
-      description: "Escolha o dia disponível para os pacotes.",
+      description: "Quando você quer vir?",
     },
     {
       title: "Horários",
@@ -2052,7 +2052,7 @@ export function BookingSection() {
     },
     {
       title: "Participantes",
-      description: "Revise o grupo e informe se levará pet.",
+      description: "",
     },
     {
       title: "Pagamento",
@@ -3008,18 +3008,17 @@ export function BookingSection() {
                     <h2 className="mt-1 text-xl font-bold text-[#2D1E0F]">
                       {wizardSteps[etapa].title}
                     </h2>
-                    <p className="mt-1 text-sm text-slate-500">
-                      {wizardSteps[etapa].description}
-                    </p>
+                    {wizardSteps[etapa].description && (
+                      <p className="mt-1 text-sm text-slate-500">
+                        {wizardSteps[etapa].description}
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 {/* ============ ETAPA 1 — DATA ============ */}
                 {etapa === 1 && (
                   <div className="mb-6">
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                      Quando você quer vir?<span className="text-red-500 ml-0.5">*</span>
-                    </label>
                     <div ref={dataRef} className="flex justify-center">
                       <DayPicker
                         mode="single"
