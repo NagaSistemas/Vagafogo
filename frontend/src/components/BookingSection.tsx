@@ -246,6 +246,8 @@ const somarGruposParticipacao = (grupos?: Array<{ participantesPorTipo?: Record<
 
 type PersonalField = "nome" | "email" | "cpf" | "telefone";
 type EtapaReserva = 0 | 1 | 2 | 3 | 4;
+type FormaPagamento = "CREDIT_CARD" | "PIX";
+type SubEtapaPagamento = "metodo" | "pix" | "cartao-dados" | "cartao-cartao" | "cartao-endereco";
 
 const onlyNumbers = (value: string) => value.replace(/\D/g, "");
 
@@ -454,8 +456,8 @@ export function BookingSection() {
   // Horário por pacote — cada pacote pode ter seu próprio horário.
   // Mantém `horario` legado sincronizado com o primeiro horário escolhido.
   const [horariosPorPacote, setHorariosPorPacote] = useState<Record<string, string>>({});
-  // Sub-etapa dentro do passo de pagamento: escolha do método ou formulário
-  const [subEtapaPagamento, setSubEtapaPagamento] = useState<"metodo" | "form">("metodo");
+  // Sub-etapa dentro do passo de pagamento: método primeiro, depois PIX ou cartão.
+  const [subEtapaPagamento, setSubEtapaPagamento] = useState<SubEtapaPagamento>("metodo");
   const [diasBloqueados, setDiasBloqueados] = useState<Set<string>>(new Set());
   const [diaSelecionadoFechado, setDiaSelecionadoFechado] = useState(false);
   const [participantesPorGrupo, setParticipantesPorGrupo] = useState<ParticipantesPorGrupo>({});
@@ -463,7 +465,7 @@ export function BookingSection() {
   const [temPet, setTemPet] = useState<boolean | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
-  const [formaPagamento, setFormaPagamento] = useState<"CREDIT_CARD" | "PIX">("CREDIT_CARD");
+  const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>("CREDIT_CARD");
   const [cartaoNome, setCartaoNome] = useState<string>("");
   const [cartaoNumero, setCartaoNumero] = useState<string>("");
   const [cartaoValidade, setCartaoValidade] = useState<string>("");
@@ -709,6 +711,76 @@ export function BookingSection() {
     const message = getPersonalFieldError(field);
     setFieldError(field, message || undefined);
     return !message;
+  };
+
+  const getDadosPessoaisPagamentoErrors = () => {
+    const errors: Record<string, string> = {};
+    personalFields.forEach((field) => {
+      const fieldError = getPersonalFieldError(field);
+      if (fieldError) {
+        errors[field] = fieldError;
+      }
+    });
+    return errors;
+  };
+
+  const getCartaoDadosErrors = () => {
+    const errors: Record<string, string> = {};
+    if (!cartaoNome.trim()) {
+      errors.cartaoNome = "Informe o nome no cartao.";
+    }
+    if (!isValidCardNumber(cartaoNumero)) {
+      errors.cartaoNumero = "Informe um numero de cartao valido.";
+    }
+
+    const validade = parseCardExpiry(cartaoValidade);
+    if (!validade) {
+      errors.cartaoValidade = "Informe a validade (MM/AA).";
+    } else {
+      const hoje = new Date();
+      const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+      const fimMesValidade = new Date(validade.year, validade.month, 0);
+      if (fimMesValidade < inicioMes) {
+        errors.cartaoValidade = "Cartao vencido.";
+      }
+    }
+
+    const cvvDigits = onlyNumbers(cartaoCvv);
+    if (cvvDigits.length < 3 || cvvDigits.length > 4) {
+      errors.cartaoCvv = "Informe o CVV.";
+    }
+
+    return errors;
+  };
+
+  const getEnderecoCobrancaErrors = () => {
+    const errors: Record<string, string> = {};
+    const cepDigits = onlyNumbers(enderecoCep);
+    if (cepDigits.length !== 8) {
+      errors.enderecoCep = "Informe o CEP.";
+    }
+    if (!enderecoRua.trim()) {
+      errors.enderecoRua = "Informe o endereco.";
+    }
+    if (!enderecoNumero.trim()) {
+      errors.enderecoNumero = "Informe o numero.";
+    }
+    if (!enderecoBairro.trim()) {
+      errors.enderecoBairro = "Informe o bairro.";
+    }
+    if (!enderecoCidade.trim()) {
+      errors.enderecoCidade = "Informe a cidade.";
+    }
+    const estado = enderecoEstado.trim().toUpperCase();
+    if (estado.length !== 2) {
+      errors.enderecoEstado = "Informe o estado (UF).";
+    }
+    return errors;
+  };
+
+  const aplicarErrosPagamento = (errors: Record<string, string>) => {
+    setFormErrors((prev) => ({ ...prev, ...errors }));
+    window.setTimeout(() => scrollToErrorField(errors), 100);
   };
 
   // BUSCA PACOTES E COMBOS VIA FIRESTORE
@@ -1919,58 +1991,10 @@ export function BookingSection() {
     }
 
     if (ateEtapa >= 4) {
-      personalFields.forEach((field) => {
-        const fieldError = getPersonalFieldError(field);
-        if (fieldError) {
-          errors[field] = fieldError;
-        }
-      });
+      Object.assign(errors, getDadosPessoaisPagamentoErrors());
 
       if (formaPagamento === "CREDIT_CARD") {
-        if (!cartaoNome.trim()) {
-          errors.cartaoNome = "Informe o nome no cartao.";
-        }
-        if (!isValidCardNumber(cartaoNumero)) {
-          errors.cartaoNumero = "Informe um numero de cartao valido.";
-        }
-
-        const validade = parseCardExpiry(cartaoValidade);
-        if (!validade) {
-          errors.cartaoValidade = "Informe a validade (MM/AA).";
-        } else {
-          const hoje = new Date();
-          const inicioMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
-          const fimMesValidade = new Date(validade.year, validade.month, 0);
-          if (fimMesValidade < inicioMes) {
-            errors.cartaoValidade = "Cartao vencido.";
-          }
-        }
-
-        const cvvDigits = onlyNumbers(cartaoCvv);
-        if (cvvDigits.length < 3 || cvvDigits.length > 4) {
-          errors.cartaoCvv = "Informe o CVV.";
-        }
-
-        const cepDigits = onlyNumbers(enderecoCep);
-        if (cepDigits.length !== 8) {
-          errors.enderecoCep = "Informe o CEP.";
-        }
-        if (!enderecoRua.trim()) {
-          errors.enderecoRua = "Informe o endereco.";
-        }
-        if (!enderecoNumero.trim()) {
-          errors.enderecoNumero = "Informe o numero.";
-        }
-        if (!enderecoBairro.trim()) {
-          errors.enderecoBairro = "Informe o bairro.";
-        }
-        if (!enderecoCidade.trim()) {
-          errors.enderecoCidade = "Informe a cidade.";
-        }
-        const estado = enderecoEstado.trim().toUpperCase();
-        if (estado.length !== 2) {
-          errors.enderecoEstado = "Informe o estado (UF).";
-        }
+        Object.assign(errors, getCartaoDadosErrors(), getEnderecoCobrancaErrors());
       }
     }
 
@@ -2015,9 +2039,39 @@ export function BookingSection() {
     },
   ] as const;
 
-  const handleSelecionarFormaPagamento = (metodo: "PIX" | "CREDIT_CARD") => {
+  const subEtapasCartao = [
+    { id: "cartao-dados", label: "Dados" },
+    { id: "cartao-cartao", label: "Cartão" },
+    { id: "cartao-endereco", label: "Endereço" },
+  ] as const;
+  const isSubEtapaCartao = subEtapaPagamento.startsWith("cartao");
+  const pagamentoPrecisaContinuar =
+    etapa < 4 ||
+    subEtapaPagamento === "metodo" ||
+    subEtapaPagamento === "cartao-dados" ||
+    subEtapaPagamento === "cartao-cartao";
+  const subEtapaPagamentoParaErro = (errors: Record<string, string>): SubEtapaPagamento | null => {
+    const camposDados = ["nome", "email", "cpf", "telefone"];
+    const camposCartao = ["cartaoNome", "cartaoNumero", "cartaoValidade", "cartaoCvv"];
+    const camposEndereco = [
+      "enderecoCep",
+      "enderecoRua",
+      "enderecoNumero",
+      "enderecoBairro",
+      "enderecoCidade",
+      "enderecoEstado",
+    ];
+    if (camposDados.some((campo) => errors[campo])) {
+      return formaPagamento === "PIX" ? "pix" : "cartao-dados";
+    }
+    if (camposCartao.some((campo) => errors[campo])) return "cartao-cartao";
+    if (camposEndereco.some((campo) => errors[campo])) return "cartao-endereco";
+    return null;
+  };
+
+  const handleSelecionarFormaPagamento = (metodo: FormaPagamento) => {
     setFormaPagamento(metodo);
-    setSubEtapaPagamento("form");
+    setSubEtapaPagamento(metodo === "PIX" ? "pix" : "cartao-dados");
 
     window.setTimeout(() => {
       const target = paymentFormRef.current ?? nomeRef.current ?? cartaoRef.current;
@@ -2026,8 +2080,15 @@ export function BookingSection() {
   };
 
   const handleVoltarEtapa = () => {
-    // Se está no formulário de pagamento, volta pro seletor de método antes de sair da etapa 4
-    if (etapa === 4 && subEtapaPagamento === "form") {
+    if (etapa === 4 && subEtapaPagamento === "cartao-endereco") {
+      setSubEtapaPagamento("cartao-cartao");
+      return;
+    }
+    if (etapa === 4 && subEtapaPagamento === "cartao-cartao") {
+      setSubEtapaPagamento("cartao-dados");
+      return;
+    }
+    if (etapa === 4 && subEtapaPagamento !== "metodo") {
       setSubEtapaPagamento("metodo");
       return;
     }
@@ -2035,9 +2096,28 @@ export function BookingSection() {
   };
 
   const handleAvancarEtapa = () => {
-    // Se está escolhendo método, avança pro formulário (sem sair da etapa 4)
     if (etapa === 4 && subEtapaPagamento === "metodo") {
       handleSelecionarFormaPagamento(formaPagamento);
+      return;
+    }
+
+    if (etapa === 4 && subEtapaPagamento === "cartao-dados") {
+      const errors = getDadosPessoaisPagamentoErrors();
+      if (Object.keys(errors).length > 0) {
+        aplicarErrosPagamento(errors);
+        return;
+      }
+      setSubEtapaPagamento("cartao-cartao");
+      return;
+    }
+
+    if (etapa === 4 && subEtapaPagamento === "cartao-cartao") {
+      const errors = getCartaoDadosErrors();
+      if (Object.keys(errors).length > 0) {
+        aplicarErrosPagamento(errors);
+        return;
+      }
+      setSubEtapaPagamento("cartao-endereco");
       return;
     }
 
@@ -2096,7 +2176,11 @@ export function BookingSection() {
       return;
     }
 
-    if (subEtapaPagamento === "metodo") {
+    if (
+      subEtapaPagamento === "metodo" ||
+      subEtapaPagamento === "cartao-dados" ||
+      subEtapaPagamento === "cartao-cartao"
+    ) {
       handleAvancarEtapa();
       return;
     }
@@ -2109,6 +2193,12 @@ export function BookingSection() {
     if (!validation.ok) {
       const etapaComErro = etapaParaPrimeiroErro(validation.errors);
       setEtapa(etapaComErro);
+      if (etapaComErro === 4) {
+        const subEtapaErro = subEtapaPagamentoParaErro(validation.errors);
+        if (subEtapaErro) {
+          setSubEtapaPagamento(subEtapaErro);
+        }
+      }
       window.setTimeout(() => scrollToErrorField(validation.errors), 120);
       return;
     }
@@ -2365,6 +2455,302 @@ export function BookingSection() {
           pacotesResumo.length > 2 ? ` +${pacotesResumo.length - 2}` : ""
         }`
       : "Selecione os pacotes para continuar.";
+
+  const dadosPessoaisPagamento = (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-sm font-bold text-slate-800 mb-1">Seus dados</h3>
+        <p className="text-xs text-slate-500">Usados para identificação e envio da confirmação.</p>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            Nome Completo <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={nome}
+            onChange={(e) => {
+              setNome(e.target.value);
+              setFieldError("nome");
+            }}
+            onBlur={() => validatePersonalField("nome")}
+            className={getInputClasses("nome")}
+            ref={nomeRef}
+            autoComplete="name"
+            required
+          />
+          {formErrors.nome && (
+            <p className="mt-1 text-sm text-red-600">{formErrors.nome}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            E-mail <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setFieldError("email");
+            }}
+            onBlur={() => validatePersonalField("email")}
+            className={getInputClasses("email")}
+            ref={emailRef}
+            autoComplete="email"
+            required
+          />
+          {formErrors.email && (
+            <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            CPF <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="text"
+            value={cpf}
+            onChange={(e) => {
+              setCpf(formatCpf(e.target.value));
+              setFieldError("cpf");
+            }}
+            onBlur={() => validatePersonalField("cpf")}
+            className={getInputClasses("cpf")}
+            ref={cpfRef}
+            placeholder="000.000.000-00"
+            inputMode="numeric"
+            maxLength={14}
+            autoComplete="off"
+            required
+          />
+          {formErrors.cpf && (
+            <p className="mt-1 text-sm text-red-600">{formErrors.cpf}</p>
+          )}
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+            Telefone / WhatsApp
+          </label>
+          <input
+            type="tel"
+            value={telefone}
+            onChange={(e) => {
+              setTelefone(formatPhone(e.target.value));
+              setFieldError("telefone");
+            }}
+            onBlur={() => validatePersonalField("telefone")}
+            className={getInputClasses("telefone")}
+            ref={telefoneRef}
+            placeholder="(11) 99999-9999"
+            inputMode="tel"
+            autoComplete="tel"
+            maxLength={15}
+          />
+          {formErrors.telefone && (
+            <p className="mt-1 text-sm text-red-600">{formErrors.telefone}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const cartaoPreview = (
+    <div className="bg-gradient-to-br from-slate-800 to-slate-900 px-3 py-4 sm:px-5 sm:py-5">
+      <div className="relative mx-auto w-full max-w-[340px] aspect-[1.586/1] overflow-hidden rounded-2xl bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 p-4 text-white shadow-xl sm:p-5">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/50">Crédito</span>
+          <span className={`inline-flex items-center rounded-full px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide ${cartaoBrandInfo ? cartaoBrandInfo.badgeClass : "bg-white/10 text-white/50"}`}>
+            {cartaoBrandInfo ? cartaoBrandInfo.label : "Bandeira"}
+          </span>
+        </div>
+        <div className="mt-5 font-mono text-[13px] font-semibold tracking-[0.08em] text-white sm:mt-6 sm:text-lg sm:tracking-[0.22em]">
+          {cartaoNumeroExibicao}
+        </div>
+        <div className="mt-4 flex items-end justify-between gap-2">
+          <div className="min-w-0">
+            <span className="block text-[9px] uppercase tracking-widest text-white/50">Nome</span>
+            <span className="block truncate text-xs font-bold uppercase tracking-wider text-white">{cartaoNomeExibicao}</span>
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="block text-[9px] uppercase tracking-widest text-white/50">Validade</span>
+            <span className="text-xs font-bold text-white">{cartaoValidadeExibicao}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const cartaoDadosFields = (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        {cardBrandConfigs.map((brand) => (
+          <span key={brand.id} className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-all ${cartaoBrand === brand.id ? brand.badgeClass : "bg-slate-100 text-slate-400"}`}>
+            {brand.label}
+          </span>
+        ))}
+      </div>
+
+      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+        Número do cartão
+        <input
+          type="text"
+          value={cartaoNumero}
+          onChange={(e) => { setCartaoNumero(formatCardNumber(e.target.value)); setFieldError("cartaoNumero"); }}
+          className={`mt-1.5 ${getInputClasses("cartaoNumero")} font-mono tracking-wider`}
+          placeholder={cartaoNumeroPlaceholder}
+          inputMode="numeric"
+          autoComplete="cc-number"
+          maxLength={cartaoNumeroMaxLength}
+          spellCheck={false}
+        />
+        {formErrors.cartaoNumero && <p className="mt-1 text-xs text-red-600">{formErrors.cartaoNumero}</p>}
+      </label>
+
+      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+        Nome no cartão
+        <input
+          type="text"
+          value={cartaoNome}
+          onChange={(e) => { setCartaoNome(e.target.value); setFieldError("cartaoNome"); }}
+          className={`mt-1.5 ${getInputClasses("cartaoNome")}`}
+          placeholder="Exatamente como impresso no cartão"
+          autoComplete="cc-name"
+          autoCapitalize="characters"
+        />
+        {formErrors.cartaoNome && <p className="mt-1 text-xs text-red-600">{formErrors.cartaoNome}</p>}
+      </label>
+
+      <div className="grid grid-cols-2 gap-3">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Validade
+          <input
+            type="text"
+            value={cartaoValidade}
+            onChange={(e) => { setCartaoValidade(formatCardExpiry(e.target.value)); setFieldError("cartaoValidade"); }}
+            className={`mt-1.5 ${getInputClasses("cartaoValidade")} font-mono`}
+            placeholder="MM/AA"
+            inputMode="numeric"
+            autoComplete="cc-exp"
+            maxLength={5}
+          />
+          {formErrors.cartaoValidade && <p className="mt-1 text-xs text-red-600">{formErrors.cartaoValidade}</p>}
+        </label>
+
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          CVV
+          <input
+            type="password"
+            value={cartaoCvv}
+            onChange={(e) => { setCartaoCvv(onlyNumbers(e.target.value).slice(0, cartaoCvvMaxLength)); setFieldError("cartaoCvv"); }}
+            className={`mt-1.5 ${getInputClasses("cartaoCvv")} font-mono`}
+            placeholder={cartaoCvvPlaceholder}
+            inputMode="numeric"
+            autoComplete="cc-csc"
+            maxLength={cartaoCvvMaxLength}
+          />
+          <p className="mt-1 text-[10px] text-slate-400">{cartaoBrand === "amex" ? "4 dígitos na frente" : "3 dígitos no verso"}</p>
+          {formErrors.cartaoCvv && <p className="mt-1 text-xs text-red-600">{formErrors.cartaoCvv}</p>}
+        </label>
+      </div>
+    </div>
+  );
+
+  const enderecoCobrancaFields = (
+    <div className="space-y-3">
+      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Endereço de cobrança</p>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[7rem_1fr]">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          CEP
+          <input
+            type="text"
+            value={enderecoCep}
+            onChange={(e) => { setEnderecoCep(formatCep(e.target.value)); setFieldError("enderecoCep"); }}
+            className={`mt-1.5 ${getInputClasses("enderecoCep")} bg-white`}
+            placeholder="00000-000"
+            inputMode="numeric"
+          />
+          {formErrors.enderecoCep && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoCep}</p>}
+        </label>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Rua / Avenida
+          <input
+            type="text"
+            value={enderecoRua}
+            onChange={(e) => { setEnderecoRua(e.target.value); setFieldError("enderecoRua"); }}
+            className={`mt-1.5 ${getInputClasses("enderecoRua")} bg-white`}
+            placeholder="Rua, Avenida, Alameda..."
+          />
+          {formErrors.enderecoRua && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoRua}</p>}
+        </label>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[7rem_1fr]">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Número
+          <input
+            type="text"
+            value={enderecoNumero}
+            onChange={(e) => { setEnderecoNumero(e.target.value); setFieldError("enderecoNumero"); }}
+            className={`mt-1.5 ${getInputClasses("enderecoNumero")} bg-white`}
+            placeholder="No."
+          />
+          {formErrors.enderecoNumero && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoNumero}</p>}
+        </label>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Complemento <span className="normal-case font-normal text-slate-400">(opcional)</span>
+          <input
+            type="text"
+            value={enderecoComplemento}
+            onChange={(e) => setEnderecoComplemento(e.target.value)}
+            className={`mt-1.5 ${getInputClasses("enderecoComplemento")} bg-white`}
+            placeholder="Apto, bloco, casa..."
+          />
+        </label>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_5rem]">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Bairro
+          <input
+            type="text"
+            value={enderecoBairro}
+            onChange={(e) => { setEnderecoBairro(e.target.value); setFieldError("enderecoBairro"); }}
+            className={`mt-1.5 ${getInputClasses("enderecoBairro")} bg-white`}
+            placeholder="Bairro"
+          />
+          {formErrors.enderecoBairro && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoBairro}</p>}
+        </label>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          Cidade
+          <input
+            type="text"
+            value={enderecoCidade}
+            onChange={(e) => { setEnderecoCidade(e.target.value); setFieldError("enderecoCidade"); }}
+            className={`mt-1.5 ${getInputClasses("enderecoCidade")} bg-white`}
+            placeholder="Cidade"
+          />
+          {formErrors.enderecoCidade && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoCidade}</p>}
+        </label>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
+          UF
+          <input
+            type="text"
+            value={enderecoEstado}
+            onChange={(e) => { setEnderecoEstado(e.target.value.toUpperCase().slice(0, 2)); setFieldError("enderecoEstado"); }}
+            className={`mt-1.5 ${getInputClasses("enderecoEstado")} bg-white text-center`}
+            placeholder="UF"
+            maxLength={2}
+          />
+          {formErrors.enderecoEstado && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoEstado}</p>}
+        </label>
+      </div>
+    </div>
+  );
 
   const resumoCard = (
     <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-md">
@@ -3339,355 +3725,76 @@ export function BookingSection() {
                   </div>
                 )}
 
-                {etapa === 4 && subEtapaPagamento === "form" && (
-                  <div ref={paymentFormRef} className="scroll-mt-24">
-                    {/* Dados Pessoais */}
-                    <div className="mb-6">
-                      <h3 className="text-sm font-bold text-slate-800 mb-1">Seus dados</h3>
-                      <p className="text-xs text-slate-500 mb-4">Usados para identificação e envio da confirmação.</p>
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                {etapa === 4 && subEtapaPagamento !== "metodo" && (
+                  <div ref={paymentFormRef} className="scroll-mt-24 space-y-5">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                          Nome Completo <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={nome}
-                          onChange={(e) => {
-                            setNome(e.target.value);
-                            setFieldError("nome");
-                          }}
-                          onBlur={() => validatePersonalField("nome")}
-                          className={getInputClasses("nome")}
-                          ref={nomeRef}
-                          autoComplete="name"
-                          required
-                        />
-                        {formErrors.nome && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.nome}</p>
-                        )}
+                        <p className="text-xs font-bold uppercase tracking-[0.2em] text-[#8B4F23]/70">
+                          Pagamento
+                        </p>
+                        <h3 className="text-xl font-bold text-[#2D1E0F]">
+                          {formaPagamento === "PIX" ? "PIX" : "Cartão de crédito"}
+                        </h3>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setSubEtapaPagamento("metodo")}
+                        className="w-full rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 sm:w-auto"
+                      >
+                        Alterar forma
+                      </button>
+                    </div>
 
-                      <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                          E-mail <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="email"
-                          value={email}
-                          onChange={(e) => {
-                            setEmail(e.target.value);
-                            setFieldError("email");
-                          }}
-                          onBlur={() => validatePersonalField("email")}
-                          className={getInputClasses("email")}
-                          ref={emailRef}
-                          autoComplete="email"
-                          required
-                        />
-                        {formErrors.email && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>
-                        )}
+                    {subEtapaPagamento === "pix" && (
+                      <div className="space-y-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-4">
+                          <p className="text-sm font-bold text-emerald-900">PIX selecionado</p>
+                          <p className="mt-1 text-sm text-emerald-800">
+                            Preencha seus dados e gere o QR Code. O código para copiar aparece logo abaixo após a geração.
+                          </p>
+                        </div>
+                        {dadosPessoaisPagamento}
                       </div>
+                    )}
 
-                      <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                          CPF <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={cpf}
-                          onChange={(e) => {
-                            setCpf(formatCpf(e.target.value));
-                            setFieldError("cpf");
-                          }}
-                          onBlur={() => validatePersonalField("cpf")}
-                          className={getInputClasses("cpf")}
-                          ref={cpfRef}
-                          placeholder="000.000.000-00"
-                          inputMode="numeric"
-                          maxLength={14}
-                          autoComplete="off"
-                          required
-                        />
-                        {formErrors.cpf && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.cpf}</p>
-                        )}
+                    {isSubEtapaCartao && (
+                      <div ref={cartaoRef} className="scroll-mt-24 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                        {cartaoPreview}
+
+                        <div className="border-b border-slate-100 bg-white px-4 py-3 sm:px-5">
+                          <div className="grid grid-cols-3 gap-2">
+                            {subEtapasCartao.map((step, index) => {
+                              const ativo = subEtapaPagamento === step.id;
+                              const etapaAtual = subEtapasCartao.findIndex((item) => item.id === subEtapaPagamento);
+                              const liberado = index <= etapaAtual;
+                              return (
+                                <button
+                                  key={step.id}
+                                  type="button"
+                                  disabled={!liberado}
+                                  onClick={() => liberado && setSubEtapaPagamento(step.id)}
+                                  className={`min-w-0 rounded-xl border px-2 py-2 text-xs font-bold transition ${
+                                    ativo
+                                      ? "border-[#8B4F23] bg-[#8B4F23] text-white"
+                                      : liberado
+                                      ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+                                      : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
+                                  }`}
+                                >
+                                  {step.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="p-4 sm:p-5">
+                          {subEtapaPagamento === "cartao-dados" && dadosPessoaisPagamento}
+                          {subEtapaPagamento === "cartao-cartao" && cartaoDadosFields}
+                          {subEtapaPagamento === "cartao-endereco" && enderecoCobrancaFields}
+                        </div>
                       </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                          Telefone / WhatsApp
-                        </label>
-                        <input
-                          type="tel"
-                          value={telefone}
-                          onChange={(e) => {
-                            setTelefone(formatPhone(e.target.value));
-                            setFieldError("telefone");
-                          }}
-                          onBlur={() => validatePersonalField("telefone")}
-                          className={getInputClasses("telefone")}
-                          ref={telefoneRef}
-                          placeholder="(11) 99999-9999"
-                          inputMode="tel"
-                          autoComplete="tel"
-                          maxLength={15}
-                        />
-                        {formErrors.telefone && (
-                          <p className="mt-1 text-sm text-red-600">{formErrors.telefone}</p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Forma de Pagamento */}
-            <div className="mb-6">
-              <label className="block text-sm font-semibold text-slate-700 mb-3">
-                Forma de Pagamento
-              </label>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:max-w-sm">
-                <label className={`flex items-center gap-3 rounded-xl border-2 p-4 cursor-pointer transition-all duration-200 ${
-                  formaPagamento === "CREDIT_CARD" ? "border-[#8B4F23] bg-[#8B4F23]/5 shadow-sm" : "border-slate-200 bg-white hover:border-[#8B4F23]/30"
-                }`}>
-                  <input
-                    type="radio"
-                    name="pagamento"
-                    checked={formaPagamento === "CREDIT_CARD"}
-                    onChange={() => setFormaPagamento("CREDIT_CARD")}
-                    className="sr-only"
-                  />
-                  <span className="text-xl">💳</span>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">Cartão</p>
-                    <p className="text-xs text-slate-500">Crédito</p>
-                  </div>
-                </label>
-                <label className={`flex items-center gap-3 rounded-xl border-2 p-4 cursor-pointer transition-all duration-200 ${
-                  formaPagamento === "PIX" ? "border-[#8B4F23] bg-[#8B4F23]/5 shadow-sm" : "border-slate-200 bg-white hover:border-[#8B4F23]/30"
-                }`}>
-                  <input
-                    type="radio"
-                    name="pagamento"
-                    checked={formaPagamento === "PIX"}
-                    onChange={() => setFormaPagamento("PIX")}
-                    className="sr-only"
-                  />
-                  <span className="text-xl">⚡</span>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">PIX</p>
-                    <p className="text-xs text-slate-500">Instantâneo</p>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            {formaPagamento === "CREDIT_CARD" && (
-              <div ref={cartaoRef} className="mb-6 scroll-mt-24 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-
-                {/* ── Preview do cartão ── */}
-                <div className="bg-gradient-to-br from-slate-800 to-slate-900 px-3 py-4 sm:px-5 sm:py-5">
-                  <div className="relative mx-auto w-full max-w-[340px] aspect-[1.586/1] overflow-hidden rounded-2xl bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 p-4 text-white shadow-xl sm:p-5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/50">Crédito</span>
-                      <span className={`inline-flex items-center rounded-full px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide ${cartaoBrandInfo ? cartaoBrandInfo.badgeClass : "bg-white/10 text-white/50"}`}>
-                        {cartaoBrandInfo ? cartaoBrandInfo.label : "Bandeira"}
-                      </span>
-                    </div>
-                    <div className="mt-5 font-mono text-[13px] font-semibold tracking-[0.08em] text-white sm:mt-6 sm:text-lg sm:tracking-[0.22em]">
-                      {cartaoNumeroExibicao}
-                    </div>
-                    <div className="mt-4 flex items-end justify-between gap-2">
-                      <div className="min-w-0">
-                        <span className="block text-[9px] uppercase tracking-widest text-white/50">Nome</span>
-                        <span className="block truncate text-xs font-bold uppercase tracking-wider text-white">{cartaoNomeExibicao}</span>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <span className="block text-[9px] uppercase tracking-widest text-white/50">Validade</span>
-                        <span className="text-xs font-bold text-white">{cartaoValidadeExibicao}</span>
-                      </div>
-                    </div>
-                    <div className="absolute -right-8 -top-8 h-24 w-24 rounded-full bg-white/5 blur-2xl" />
-                    <div className="absolute -bottom-8 -left-8 h-32 w-32 rounded-full bg-indigo-500/20 blur-2xl" />
-                  </div>
-                </div>
-
-                {/* ── Campos do cartão ── */}
-                <div className="p-4 sm:p-5 space-y-4">
-
-                  {/* Bandeiras */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {cardBrandConfigs.map((brand) => (
-                      <span key={brand.id} className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition-all ${cartaoBrand === brand.id ? brand.badgeClass : "bg-slate-100 text-slate-400"}`}>
-                        {brand.label}
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* Número — full width */}
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Número do cartão
-                    <input
-                      type="text"
-                      value={cartaoNumero}
-                      onChange={(e) => { setCartaoNumero(formatCardNumber(e.target.value)); setFieldError("cartaoNumero"); }}
-                      className={`mt-1.5 ${getInputClasses("cartaoNumero")} font-mono tracking-wider`}
-                      placeholder={cartaoNumeroPlaceholder}
-                      inputMode="numeric"
-                      autoComplete="cc-number"
-                      maxLength={cartaoNumeroMaxLength}
-                      spellCheck={false}
-                    />
-                    {formErrors.cartaoNumero && <p className="mt-1 text-xs text-red-600">{formErrors.cartaoNumero}</p>}
-                  </label>
-
-                  {/* Nome — full width */}
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                    Nome no cartão
-                    <input
-                      type="text"
-                      value={cartaoNome}
-                      onChange={(e) => { setCartaoNome(e.target.value); setFieldError("cartaoNome"); }}
-                      className={`mt-1.5 ${getInputClasses("cartaoNome")}`}
-                      placeholder="Exatamente como impresso no cartão"
-                      autoComplete="cc-name"
-                      autoCapitalize="characters"
-                    />
-                    {formErrors.cartaoNome && <p className="mt-1 text-xs text-red-600">{formErrors.cartaoNome}</p>}
-                  </label>
-
-                  {/* Validade + CVV — lado a lado */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                      Validade
-                      <input
-                        type="text"
-                        value={cartaoValidade}
-                        onChange={(e) => { setCartaoValidade(formatCardExpiry(e.target.value)); setFieldError("cartaoValidade"); }}
-                        className={`mt-1.5 ${getInputClasses("cartaoValidade")} font-mono`}
-                        placeholder="MM/AA"
-                        inputMode="numeric"
-                        autoComplete="cc-exp"
-                        maxLength={5}
-                      />
-                      {formErrors.cartaoValidade && <p className="mt-1 text-xs text-red-600">{formErrors.cartaoValidade}</p>}
-                    </label>
-
-                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                      CVV
-                      <input
-                        type="password"
-                        value={cartaoCvv}
-                        onChange={(e) => { setCartaoCvv(onlyNumbers(e.target.value).slice(0, cartaoCvvMaxLength)); setFieldError("cartaoCvv"); }}
-                        className={`mt-1.5 ${getInputClasses("cartaoCvv")} font-mono`}
-                        placeholder={cartaoCvvPlaceholder}
-                        inputMode="numeric"
-                        autoComplete="cc-csc"
-                        maxLength={cartaoCvvMaxLength}
-                      />
-                      <p className="mt-1 text-[10px] text-slate-400">{cartaoBrand === "amex" ? "4 dígitos na frente" : "3 dígitos no verso"}</p>
-                      {formErrors.cartaoCvv && <p className="mt-1 text-xs text-red-600">{formErrors.cartaoCvv}</p>}
-                    </label>
-                  </div>
-
-                  {/* Endereço de cobrança */}
-                  <div className="mt-1 rounded-xl border border-slate-100 bg-slate-50 p-3 space-y-3 sm:p-4">
-                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Endereço de cobrança</p>
-
-                    {/* CEP + Rua */}
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[7rem_1fr]">
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        CEP
-                        <input
-                          type="text"
-                          value={enderecoCep}
-                          onChange={(e) => { setEnderecoCep(formatCep(e.target.value)); setFieldError("enderecoCep"); }}
-                          className={`mt-1.5 ${getInputClasses("enderecoCep")} bg-white`}
-                          placeholder="00000-000"
-                          inputMode="numeric"
-                        />
-                        {formErrors.enderecoCep && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoCep}</p>}
-                      </label>
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        Rua / Avenida
-                        <input
-                          type="text"
-                          value={enderecoRua}
-                          onChange={(e) => { setEnderecoRua(e.target.value); setFieldError("enderecoRua"); }}
-                          className={`mt-1.5 ${getInputClasses("enderecoRua")} bg-white`}
-                          placeholder="Rua, Avenida, Alameda…"
-                        />
-                        {formErrors.enderecoRua && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoRua}</p>}
-                      </label>
-                    </div>
-
-                    {/* Número + Complemento */}
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[7rem_1fr]">
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        Número
-                        <input
-                          type="text"
-                          value={enderecoNumero}
-                          onChange={(e) => { setEnderecoNumero(e.target.value); setFieldError("enderecoNumero"); }}
-                          className={`mt-1.5 ${getInputClasses("enderecoNumero")} bg-white`}
-                          placeholder="Nº"
-                        />
-                        {formErrors.enderecoNumero && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoNumero}</p>}
-                      </label>
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        Complemento <span className="normal-case font-normal text-slate-400">(opcional)</span>
-                        <input
-                          type="text"
-                          value={enderecoComplemento}
-                          onChange={(e) => setEnderecoComplemento(e.target.value)}
-                          className={`mt-1.5 ${getInputClasses("enderecoComplemento")} bg-white`}
-                          placeholder="Apto, bloco, casa…"
-                        />
-                      </label>
-                    </div>
-
-                    {/* Bairro + Cidade + UF */}
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_5rem]">
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        Bairro
-                        <input
-                          type="text"
-                          value={enderecoBairro}
-                          onChange={(e) => { setEnderecoBairro(e.target.value); setFieldError("enderecoBairro"); }}
-                          className={`mt-1.5 ${getInputClasses("enderecoBairro")} bg-white`}
-                          placeholder="Bairro"
-                        />
-                        {formErrors.enderecoBairro && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoBairro}</p>}
-                      </label>
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        Cidade
-                        <input
-                          type="text"
-                          value={enderecoCidade}
-                          onChange={(e) => { setEnderecoCidade(e.target.value); setFieldError("enderecoCidade"); }}
-                          className={`mt-1.5 ${getInputClasses("enderecoCidade")} bg-white`}
-                          placeholder="Cidade"
-                        />
-                        {formErrors.enderecoCidade && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoCidade}</p>}
-                      </label>
-                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">
-                        UF
-                        <input
-                          type="text"
-                          value={enderecoEstado}
-                          onChange={(e) => { setEnderecoEstado(e.target.value.toUpperCase().slice(0, 2)); setFieldError("enderecoEstado"); }}
-                          className={`mt-1.5 ${getInputClasses("enderecoEstado")} bg-white text-center`}
-                          placeholder="UF"
-                          maxLength={2}
-                        />
-                        {formErrors.enderecoEstado && <p className="mt-1 text-xs text-red-600">{formErrors.enderecoEstado}</p>}
-                      </label>
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-            )}
+                    )}
                   </div>
                 )}
 
@@ -3706,13 +3813,19 @@ export function BookingSection() {
                     Voltar
                   </button>
 
-                  {etapa < 4 || subEtapaPagamento === "metodo" ? (
+                  {pagamentoPrecisaContinuar ? (
                     <button
                       type="button"
                       onClick={handleAvancarEtapa}
                       className="w-full sm:w-auto inline-flex items-center gap-2 justify-center rounded-full bg-[#8B4F23] px-7 py-3.5 sm:py-3 text-sm font-semibold text-white shadow-sm transition-all duration-200 hover:bg-[#A05D2B] hover:shadow-md"
                     >
-                      Continuar
+                      {etapa < 4
+                        ? "Continuar"
+                        : subEtapaPagamento === "cartao-dados"
+                        ? "Continuar para cartão"
+                        : subEtapaPagamento === "cartao-cartao"
+                        ? "Continuar para endereço"
+                        : "Continuar"}
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                       </svg>
@@ -3729,7 +3842,7 @@ export function BookingSection() {
                         ? "Aguardando confirmação..."
                         : formaPagamento === "PIX"
                         ? "Gerar QR Code PIX"
-                        : "Fazer Reserva"}
+                        : "Pagar com cartão"}
                     </button>
                   )}
                 </div>
