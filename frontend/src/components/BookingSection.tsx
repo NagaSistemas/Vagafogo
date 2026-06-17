@@ -413,6 +413,8 @@ export function BookingSection() {
   const [horariosPorPacote, setHorariosPorPacote] = useState<Record<string, string>>({});
   // Sub-etapa dentro do passo de pagamento: escolha do método ou formulário
   const [subEtapaPagamento, setSubEtapaPagamento] = useState<"metodo" | "form">("metodo");
+  // Sub-passo dentro da etapa "Pacotes": índice na lista de opções (combos + pacotes individuais)
+  const [subPassoPacote, setSubPassoPacote] = useState<number>(0);
   const [diasBloqueados, setDiasBloqueados] = useState<Set<string>>(new Set());
   const [diaSelecionadoFechado, setDiaSelecionadoFechado] = useState(false);
   const [participantesPorTipo, setParticipantesPorTipo] = useState<TipoClienteQuantidade>({});
@@ -503,6 +505,7 @@ export function BookingSection() {
     setHorario("");
     setHorariosPorPacote({});
     setSubEtapaPagamento("metodo");
+    setSubPassoPacote(0);
     setParticipantesPorTipo({});
     setTemPet(null);
     setCheckoutUrl(null);
@@ -840,6 +843,9 @@ export function BookingSection() {
     ),
     [gruposParticipacao]
   );
+
+  // Total de opções (combos + pacotes individuais) na etapa "Pacotes"
+  const totalOpcoesPacote = combos.length + pacotes.length;
 
   // Sincroniza selectedPackages a partir dos grupos ativos
   useEffect(() => {
@@ -1967,6 +1973,11 @@ export function BookingSection() {
       setSubEtapaPagamento("metodo");
       return;
     }
+    // Na etapa Pacotes (0): se há sub-passo anterior, retrocede o sub-passo em vez de sair da etapa
+    if (etapa === 0 && subPassoPacote > 0) {
+      setSubPassoPacote(subPassoPacote - 1);
+      return;
+    }
     setEtapa((prev) => (prev > 0 ? ((prev - 1) as EtapaReserva) : prev));
   };
 
@@ -1974,6 +1985,12 @@ export function BookingSection() {
     // Se está escolhendo método, avança pro formulário (sem sair da etapa 4)
     if (etapa === 4 && subEtapaPagamento === "metodo") {
       setSubEtapaPagamento("form");
+      return;
+    }
+
+    // Na etapa Pacotes (0): se ainda há próxima opção, avança o sub-passo em vez de sair da etapa
+    if (etapa === 0 && subPassoPacote < totalOpcoesPacote - 1) {
+      setSubPassoPacote(subPassoPacote + 1);
       return;
     }
 
@@ -2558,223 +2575,310 @@ export function BookingSection() {
                   </div>
                 )}
 
-                {/* ============ ETAPA 0 — MONTE SEU GRUPO ============ */}
-                {etapa === 0 && (
-                  <div ref={pacotesRef} className="space-y-5">
-                    <div className="mb-1">
-                      <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#8B4F23]/70 mb-1">
-                        Passo 1 de 5
-                      </p>
-                      <h3 className="text-xl font-bold text-[#2D1E0F]">Monte seu grupo</h3>
-                      <p className="text-sm text-slate-500 mt-1">
-                        Informe quantas pessoas vão participar de cada experiência. Pode misturar combos e atividades individuais.
-                      </p>
-                    </div>
+                {/* ============ ETAPA 0 — MONTE SEU GRUPO (com sub-passos) ============ */}
+                {etapa === 0 && (() => {
+                  // Constrói a lista de opções: combos primeiro, depois pacotes individuais
+                  type OpcaoPacote =
+                    | { tipo: "combo"; combo: Combo }
+                    | { tipo: "pacote"; pacote: Pacote };
+                  const opcoes: OpcaoPacote[] = [
+                    ...combos.map((c) => ({ tipo: "combo" as const, combo: c })),
+                    ...pacotes.map((p) => ({ tipo: "pacote" as const, pacote: p })),
+                  ];
+                  const total = opcoes.length;
+                  const idx = Math.max(0, Math.min(subPassoPacote, total - 1));
+                  const opcaoAtual = opcoes[idx];
 
-                    {/* COMBOS */}
-                    {combos.length > 0 && (
-                      <div>
-                        <p className="text-xs font-bold uppercase tracking-wider text-[#E0B13C] mb-2.5 flex items-center gap-2">
-                          <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#E0B13C]" />
-                          Combos especiais
+                  if (!opcaoAtual) {
+                    return (
+                      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                        <p className="text-sm text-amber-800">
+                          Nenhuma atividade disponível no momento.
                         </p>
-                        <div className="space-y-3">
-                          {combos.map((combo) => {
-                            const chave = `combo:${combo.id}`;
-                            const grupo = obterGrupoPorChave(chave);
-                            const totalNoGrupo = grupo
-                              ? Object.values(grupo.participantesPorTipo).reduce((a, b) => a + Number(b), 0)
-                              : 0;
-                            const indisponivelNoDia = Boolean(
-                              selectedDay && combo.id && disponibilidadeCombosNoDia[combo.id] === false
-                            );
-                            const nomes = combo.pacoteIds
-                              .map((id) => pacotesMap.get(id)?.nome ?? "Pacote removido")
-                              .filter(Boolean)
-                              .join(" + ");
-                            const possuiTabela = hasCustomComboPricing(combo);
-                            const resumoValores = describeComboValores(combo);
-
-                            return (
-                              <div
-                                key={combo.id}
-                                className={`rounded-2xl border-2 p-4 transition-all duration-300 ${
-                                  indisponivelNoDia
-                                    ? "border-slate-100 bg-slate-50 opacity-60"
-                                    : totalNoGrupo > 0
-                                    ? "border-[#E0B13C] bg-gradient-to-br from-[#E0B13C]/10 via-white to-[#8B4F23]/5 shadow-lg shadow-[#E0B13C]/15"
-                                    : "border-slate-200 bg-white hover:border-[#E0B13C]/40 hover:shadow"
-                                }`}
-                              >
-                                <div className="flex items-start justify-between gap-3 mb-3">
-                                  <div className="flex-1 min-w-0">
-                                    <p className="text-sm font-bold text-[#2D1E0F]">{combo.nome}</p>
-                                    <p className="text-xs text-slate-500 mt-0.5">{nomes || "Pacotes removidos"}</p>
-                                  </div>
-                                  <span className={`text-xs font-semibold whitespace-nowrap ${indisponivelNoDia ? "text-red-700" : "text-emerald-700"}`}>
-                                    {indisponivelNoDia
-                                      ? "Esgotado"
-                                      : possuiTabela
-                                      ? "Personalizado"
-                                      : combo.preco && combo.preco > 0
-                                      ? formatCurrency(combo.preco)
-                                      : combo.desconto && combo.desconto > 0
-                                      ? `${combo.desconto}% off`
-                                      : "Especial"}
-                                  </span>
-                                </div>
-
-                                {possuiTabela && resumoValores && (
-                                  <p className="text-[11px] text-slate-500 mb-3 italic">{resumoValores}</p>
-                                )}
-
-                                {!indisponivelNoDia && (
-                                  <div className="space-y-2">
-                                    {tiposClientesAtivos.map((tipo) => {
-                                      const tipoChave = obterChaveTipo(tipo);
-                                      const qtd = grupo?.participantesPorTipo[tipoChave] ?? 0;
-                                      const preco = possuiTabela
-                                        ? obterPrecoPorTipo(combo.precosPorTipo, tipo, combo)
-                                        : null;
-                                      return (
-                                        <div key={tipoChave} className="flex items-center justify-between gap-3">
-                                          <div className="flex-1 min-w-0">
-                                            <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
-                                            {preco !== null && preco > 0 && (
-                                              <p className="text-[11px] text-slate-400">{formatCurrency(preco)} /pessoa</p>
-                                            )}
-                                          </div>
-                                          <div className="flex items-center gap-1.5">
-                                            <button
-                                              type="button"
-                                              onClick={() => ajustarQuantidadeNoGrupo(chave, "combo", combo.id!, tipoChave, -1)}
-                                              disabled={qtd <= 0}
-                                              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                                              aria-label="Diminuir"
-                                            >−</button>
-                                            <span className="w-7 text-center text-sm font-semibold tabular-nums">{qtd}</span>
-                                            <button
-                                              type="button"
-                                              onClick={() => ajustarQuantidadeNoGrupo(chave, "combo", combo.id!, tipoChave, +1)}
-                                              className="w-8 h-8 rounded-full bg-[#8B4F23] hover:bg-[#A05D2B] text-white font-bold transition-all"
-                                              aria-label="Aumentar"
-                                            >+</button>
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
                       </div>
-                    )}
+                    );
+                  }
 
-                    {/* PACOTES INDIVIDUAIS */}
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-[#8B4F23] mb-2.5 flex items-center gap-2">
-                        <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#8B4F23]" />
-                        Atividades individuais
-                      </p>
-                      <div className="space-y-3">
-                        {pacotes.map((pacote) => {
-                          const chave = `pacote:${pacote.id}`;
-                          const grupo = obterGrupoPorChave(chave);
-                          const totalNoGrupo = grupo
-                            ? Object.values(grupo.participantesPorTipo).reduce((a, b) => a + Number(b), 0)
-                            : 0;
-                          const indisponivelNoDia = Boolean(
-                            selectedDay && pacote.id && disponibilidadePacotesNoDia[pacote.id] === false
-                          );
+                  const isUltimo = idx === total - 1;
+                  const nomeOpcao = opcaoAtual.tipo === "combo"
+                    ? opcaoAtual.combo.nome
+                    : `Somente ${opcaoAtual.pacote.nome}`;
 
-                          return (
-                            <div
-                              key={pacote.id}
-                              className={`rounded-2xl border-2 p-4 transition-all duration-300 ${
-                                indisponivelNoDia
-                                  ? "border-slate-100 bg-slate-50 opacity-60"
-                                  : totalNoGrupo > 0
-                                  ? "border-[#8B4F23] bg-gradient-to-br from-[#8B4F23]/8 via-white to-[#E0B13C]/8 shadow-lg shadow-[#8B4F23]/10"
-                                  : "border-slate-200 bg-white hover:border-[#8B4F23]/40 hover:shadow"
-                              }`}
-                            >
-                              <div className="flex items-start justify-between gap-3 mb-3">
-                                <div className="flex-1 min-w-0">
-                                  <p className="text-sm font-bold text-[#2D1E0F] flex items-center gap-1.5">
-                                    {pacote.emoji && <span>{pacote.emoji}</span>}
-                                    <span>Somente {pacote.nome}</span>
-                                  </p>
-                                  <p className="text-[11px] text-slate-500 mt-0.5">
-                                    Pessoas que farão apenas {pacote.nome}.
-                                  </p>
-                                </div>
-                                {indisponivelNoDia && (
-                                  <span className="text-xs font-semibold text-red-700 whitespace-nowrap">Esgotado</span>
-                                )}
+                  return (
+                    <div ref={pacotesRef} className="space-y-5">
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#8B4F23]/70">
+                            Opção {idx + 1} de {total}
+                          </p>
+                          {totalParticipantesSelecionados > 0 && (
+                            <p className="text-[10px] font-semibold text-emerald-700">
+                              {totalParticipantesSelecionados} pessoa(s) já no grupo
+                            </p>
+                          )}
+                        </div>
+                        <h3 className="text-xl font-bold text-[#2D1E0F]">Monte seu grupo</h3>
+                        <p className="text-sm text-slate-500 mt-1">
+                          Quem vai participar de <strong className="text-[#8B4F23]">{nomeOpcao}</strong>? Pode pular se ninguém for.
+                        </p>
+
+                        {/* Stepper sub-passos (bolinhas pequenas) */}
+                        {total > 1 && (
+                          <div className="mt-3 flex items-center gap-1.5">
+                            {opcoes.map((op, i) => {
+                              const chave = op.tipo === "combo"
+                                ? `combo:${op.combo.id}`
+                                : `pacote:${op.pacote.id}`;
+                              const grupoCheck = obterGrupoPorChave(chave);
+                              const temPessoas = grupoCheck
+                                && Object.values(grupoCheck.participantesPorTipo).some((v) => Number(v) > 0);
+                              const ativa = i === idx;
+                              return (
+                                <button
+                                  key={chave}
+                                  type="button"
+                                  onClick={() => setSubPassoPacote(i)}
+                                  className={`h-2 rounded-full transition-all duration-300 ${
+                                    ativa
+                                      ? "w-8 bg-[#8B4F23]"
+                                      : temPessoas
+                                      ? "w-2 bg-emerald-500"
+                                      : "w-2 bg-slate-300 hover:bg-slate-400"
+                                  }`}
+                                  aria-label={`Ir para opção ${i + 1}`}
+                                />
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* CARD DA OPÇÃO ATUAL */}
+                      {opcaoAtual.tipo === "combo" ? (() => {
+                        const combo = opcaoAtual.combo;
+                        const chave = `combo:${combo.id}`;
+                        const grupo = obterGrupoPorChave(chave);
+                        const totalNoGrupo = grupo
+                          ? Object.values(grupo.participantesPorTipo).reduce((a, b) => a + Number(b), 0)
+                          : 0;
+                        const indisponivelNoDia = Boolean(
+                          selectedDay && combo.id && disponibilidadeCombosNoDia[combo.id] === false
+                        );
+                        const nomes = combo.pacoteIds
+                          .map((id) => pacotesMap.get(id)?.nome ?? "Pacote removido")
+                          .filter(Boolean)
+                          .join(" + ");
+                        const possuiTabela = hasCustomComboPricing(combo);
+                        const resumoValores = describeComboValores(combo);
+
+                        return (
+                          <div
+                            className={`rounded-2xl border-2 p-5 transition-all duration-300 ${
+                              indisponivelNoDia
+                                ? "border-slate-100 bg-slate-50 opacity-60"
+                                : totalNoGrupo > 0
+                                ? "border-[#E0B13C] bg-gradient-to-br from-[#E0B13C]/10 via-white to-[#8B4F23]/5 shadow-lg shadow-[#E0B13C]/15"
+                                : "border-slate-200 bg-white shadow-sm"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                              <div className="flex-1 min-w-0">
+                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#E0B13C] mb-1">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-[#E0B13C]" />
+                                  Combo
+                                </span>
+                                <p className="text-base font-bold text-[#2D1E0F]">{combo.nome}</p>
+                                <p className="text-xs text-slate-500 mt-0.5">{nomes || "Pacotes removidos"}</p>
                               </div>
+                              <span className={`text-xs font-semibold whitespace-nowrap ${indisponivelNoDia ? "text-red-700" : "text-emerald-700"}`}>
+                                {indisponivelNoDia
+                                  ? "Esgotado"
+                                  : possuiTabela
+                                  ? "Personalizado"
+                                  : combo.preco && combo.preco > 0
+                                  ? formatCurrency(combo.preco)
+                                  : combo.desconto && combo.desconto > 0
+                                  ? `${combo.desconto}% off`
+                                  : "Especial"}
+                              </span>
+                            </div>
 
-                              {!indisponivelNoDia && (
-                                <div className="space-y-2">
-                                  {tiposClientesAtivos.map((tipo) => {
-                                    const tipoChave = obterChaveTipo(tipo);
-                                    const qtd = grupo?.participantesPorTipo[tipoChave] ?? 0;
-                                    const preco = obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote);
-                                    return (
-                                      <div key={tipoChave} className="flex items-center justify-between gap-3">
-                                        <div className="flex-1 min-w-0">
-                                          <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
-                                          {preco > 0 && (
-                                            <p className="text-[11px] text-slate-400">{formatCurrency(preco)} /pessoa</p>
-                                          )}
-                                        </div>
-                                        <div className="flex items-center gap-1.5">
-                                          <button
-                                            type="button"
-                                            onClick={() => ajustarQuantidadeNoGrupo(chave, "pacote", pacote.id!, tipoChave, -1)}
-                                            disabled={qtd <= 0}
-                                            className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold disabled:opacity-30 disabled:cursor-not-allowed transition-all"
-                                            aria-label="Diminuir"
-                                          >−</button>
-                                          <span className="w-7 text-center text-sm font-semibold tabular-nums">{qtd}</span>
-                                          <button
-                                            type="button"
-                                            onClick={() => ajustarQuantidadeNoGrupo(chave, "pacote", pacote.id!, tipoChave, +1)}
-                                            className="w-8 h-8 rounded-full bg-[#8B4F23] hover:bg-[#A05D2B] text-white font-bold transition-all"
-                                            aria-label="Aumentar"
-                                          >+</button>
-                                        </div>
+                            {possuiTabela && resumoValores && (
+                              <p className="text-[11px] text-slate-500 mb-3 italic">{resumoValores}</p>
+                            )}
+
+                            {!indisponivelNoDia && (
+                              <div className="space-y-2.5 pt-3 border-t border-slate-100">
+                                {tiposClientesAtivos.map((tipo) => {
+                                  const tipoChave = obterChaveTipo(tipo);
+                                  const qtd = grupo?.participantesPorTipo[tipoChave] ?? 0;
+                                  const preco = possuiTabela
+                                    ? obterPrecoPorTipo(combo.precosPorTipo, tipo, combo)
+                                    : null;
+                                  return (
+                                    <div key={tipoChave} className="flex items-center justify-between gap-3">
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
+                                        {preco !== null && preco > 0 && (
+                                          <p className="text-[11px] text-slate-400">{formatCurrency(preco)} /pessoa</p>
+                                        )}
                                       </div>
-                                    );
-                                  })}
-                                </div>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => ajustarQuantidadeNoGrupo(chave, "combo", combo.id!, tipoChave, -1)}
+                                          disabled={qtd <= 0}
+                                          className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                          aria-label="Diminuir"
+                                        >−</button>
+                                        <span className="w-8 text-center text-base font-bold tabular-nums">{qtd}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => ajustarQuantidadeNoGrupo(chave, "combo", combo.id!, tipoChave, +1)}
+                                          className="w-9 h-9 rounded-full bg-[#8B4F23] hover:bg-[#A05D2B] text-white font-bold text-lg transition-all"
+                                          aria-label="Aumentar"
+                                        >+</button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })() : (() => {
+                        const pacote = opcaoAtual.pacote;
+                        const chave = `pacote:${pacote.id}`;
+                        const grupo = obterGrupoPorChave(chave);
+                        const totalNoGrupo = grupo
+                          ? Object.values(grupo.participantesPorTipo).reduce((a, b) => a + Number(b), 0)
+                          : 0;
+                        const indisponivelNoDia = Boolean(
+                          selectedDay && pacote.id && disponibilidadePacotesNoDia[pacote.id] === false
+                        );
+
+                        return (
+                          <div
+                            className={`rounded-2xl border-2 p-5 transition-all duration-300 ${
+                              indisponivelNoDia
+                                ? "border-slate-100 bg-slate-50 opacity-60"
+                                : totalNoGrupo > 0
+                                ? "border-[#8B4F23] bg-gradient-to-br from-[#8B4F23]/8 via-white to-[#E0B13C]/8 shadow-lg shadow-[#8B4F23]/10"
+                                : "border-slate-200 bg-white shadow-sm"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                              <div className="flex-1 min-w-0">
+                                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-[#8B4F23] mb-1">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-[#8B4F23]" />
+                                  Atividade individual
+                                </span>
+                                <p className="text-base font-bold text-[#2D1E0F] flex items-center gap-1.5">
+                                  {pacote.emoji && <span>{pacote.emoji}</span>}
+                                  <span>Somente {pacote.nome}</span>
+                                </p>
+                                <p className="text-[11px] text-slate-500 mt-0.5">
+                                  Pessoas que farão apenas {pacote.nome}.
+                                </p>
+                              </div>
+                              {indisponivelNoDia && (
+                                <span className="text-xs font-semibold text-red-700 whitespace-nowrap">Esgotado</span>
                               )}
                             </div>
-                          );
-                        })}
-                      </div>
-                    </div>
 
-                    {/* Resumo do total */}
-                    {totalParticipantesSelecionados > 0 && (
-                      <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50/60 to-white p-4 flex items-center justify-between">
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700">Total do grupo</p>
-                          <p className="text-sm text-slate-700 mt-0.5">{totalParticipantesSelecionados} pessoa(s)</p>
+                            {!indisponivelNoDia && (
+                              <div className="space-y-2.5 pt-3 border-t border-slate-100">
+                                {tiposClientesAtivos.map((tipo) => {
+                                  const tipoChave = obterChaveTipo(tipo);
+                                  const qtd = grupo?.participantesPorTipo[tipoChave] ?? 0;
+                                  const preco = obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote);
+                                  return (
+                                    <div key={tipoChave} className="flex items-center justify-between gap-3">
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
+                                        {preco > 0 && (
+                                          <p className="text-[11px] text-slate-400">{formatCurrency(preco)} /pessoa</p>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => ajustarQuantidadeNoGrupo(chave, "pacote", pacote.id!, tipoChave, -1)}
+                                          disabled={qtd <= 0}
+                                          className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-lg disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+                                          aria-label="Diminuir"
+                                        >−</button>
+                                        <span className="w-8 text-center text-base font-bold tabular-nums">{qtd}</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => ajustarQuantidadeNoGrupo(chave, "pacote", pacote.id!, tipoChave, +1)}
+                                          className="w-9 h-9 rounded-full bg-[#8B4F23] hover:bg-[#A05D2B] text-white font-bold text-lg transition-all"
+                                          aria-label="Aumentar"
+                                        >+</button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      {/* Mini-resumo do que já foi montado */}
+                      {gruposAtivos.length > 0 && (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/40 p-3">
+                          <p className="text-[10px] font-bold uppercase tracking-widest text-emerald-700 mb-1.5">No grupo até agora</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {gruposAtivos.map((g) => {
+                              const nome = g.tipo === "combo"
+                                ? combos.find((c) => c.id === g.refId)?.nome
+                                : pacotes.find((p) => p.id === g.refId)?.nome;
+                              const qtd = Object.values(g.participantesPorTipo).reduce((a, b) => a + Number(b), 0);
+                              return (
+                                <span key={g.chave} className="inline-flex items-center gap-1 rounded-full bg-white border border-emerald-200 px-2.5 py-1 text-[11px] font-medium text-emerald-800">
+                                  {qtd}× {nome ?? "—"}
+                                </span>
+                              );
+                            })}
+                          </div>
+                          <p className="mt-2 text-xs text-emerald-700 font-semibold">
+                            Total: {totalParticipantesSelecionados} pessoa(s) · {formatCurrency(calcularTotal())}
+                          </p>
                         </div>
-                        <p className="text-xl font-bold text-[#8B4F23]">{formatCurrency(calcularTotal())}</p>
-                      </div>
-                    )}
+                      )}
 
-                    {formErrors.pacotes && (
-                      <p className="text-sm text-red-600">{formErrors.pacotes}</p>
-                    )}
-                    {formErrors.participantes && (
-                      <p className="text-sm text-red-600">{formErrors.participantes}</p>
-                    )}
-                  </div>
-                )}
+                      {/* Navegação entre sub-passos */}
+                      {!isUltimo && (
+                        <div className="flex gap-2">
+                          {idx > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setSubPassoPacote(idx - 1)}
+                              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-all"
+                            >
+                              ← Anterior
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setSubPassoPacote(idx + 1)}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-full bg-[#8B4F23] text-white px-4 py-2.5 text-sm font-semibold hover:bg-[#A05D2B] transition-all"
+                          >
+                            Próxima opção →
+                          </button>
+                        </div>
+                      )}
+
+                      {formErrors.pacotes && (
+                        <p className="text-sm text-red-600">{formErrors.pacotes}</p>
+                      )}
+                      {formErrors.participantes && (
+                        <p className="text-sm text-red-600">{formErrors.participantes}</p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* ============ ETAPA 2 — HORÁRIO + PERGUNTAS POR PACOTE ============ */}
                 {etapa === 2 && (
