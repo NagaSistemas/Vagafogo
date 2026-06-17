@@ -2560,25 +2560,25 @@ export function BookingSection() {
   );
 
   const cartaoPreview = (
-    <div className="bg-gradient-to-br from-slate-800 to-slate-900 px-3 py-4 sm:px-5 sm:py-5">
-      <div className="relative mx-auto w-full max-w-[340px] aspect-[1.586/1] overflow-hidden rounded-2xl bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 p-4 text-white shadow-xl sm:p-5">
+    <div className="bg-gradient-to-br from-slate-800 to-slate-900 px-3 py-3 sm:px-4 sm:py-4">
+      <div className="relative mx-auto w-full max-w-[300px] aspect-[1.586/1] overflow-hidden rounded-xl bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900 p-3.5 text-white shadow-lg sm:p-4">
         <div className="flex items-center justify-between">
-          <span className="text-[10px] font-bold uppercase tracking-[0.3em] text-white/50">Crédito</span>
-          <span className={`inline-flex items-center rounded-full px-3 py-0.5 text-[10px] font-bold uppercase tracking-wide ${cartaoBrandInfo ? cartaoBrandInfo.badgeClass : "bg-white/10 text-white/50"}`}>
+          <span className="text-[9px] font-bold uppercase tracking-[0.3em] text-white/50">Crédito</span>
+          <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${cartaoBrandInfo ? cartaoBrandInfo.badgeClass : "bg-white/10 text-white/50"}`}>
             {cartaoBrandInfo ? cartaoBrandInfo.label : "Bandeira"}
           </span>
         </div>
-        <div className="mt-5 font-mono text-[13px] font-semibold tracking-[0.08em] text-white sm:mt-6 sm:text-lg sm:tracking-[0.22em]">
+        <div className="mt-4 font-mono text-[12px] font-semibold tracking-[0.08em] text-white sm:text-base sm:tracking-[0.18em]">
           {cartaoNumeroExibicao}
         </div>
-        <div className="mt-4 flex items-end justify-between gap-2">
+        <div className="mt-3 flex items-end justify-between gap-2">
           <div className="min-w-0">
-            <span className="block text-[9px] uppercase tracking-widest text-white/50">Nome</span>
-            <span className="block truncate text-xs font-bold uppercase tracking-wider text-white">{cartaoNomeExibicao}</span>
+            <span className="block text-[8px] uppercase tracking-widest text-white/50">Nome</span>
+            <span className="block truncate text-[11px] font-bold uppercase tracking-wider text-white">{cartaoNomeExibicao}</span>
           </div>
           <div className="shrink-0 text-right">
-            <span className="block text-[9px] uppercase tracking-widest text-white/50">Validade</span>
-            <span className="text-xs font-bold text-white">{cartaoValidadeExibicao}</span>
+            <span className="block text-[8px] uppercase tracking-widest text-white/50">Validade</span>
+            <span className="text-[11px] font-bold text-white">{cartaoValidadeExibicao}</span>
           </div>
         </div>
       </div>
@@ -3762,30 +3762,61 @@ export function BookingSection() {
                         {cartaoPreview}
 
                         <div className="border-b border-slate-100 bg-white px-4 py-3 sm:px-5">
-                          <div className="grid grid-cols-3 gap-2">
-                            {subEtapasCartao.map((step, index) => {
-                              const ativo = subEtapaPagamento === step.id;
-                              const etapaAtual = subEtapasCartao.findIndex((item) => item.id === subEtapaPagamento);
-                              const liberado = index <= etapaAtual;
-                              return (
-                                <button
-                                  key={step.id}
-                                  type="button"
-                                  disabled={!liberado}
-                                  onClick={() => liberado && setSubEtapaPagamento(step.id)}
-                                  className={`min-w-0 rounded-xl border px-2 py-2 text-xs font-bold transition ${
-                                    ativo
-                                      ? "border-[#8B4F23] bg-[#8B4F23] text-white"
-                                      : liberado
-                                      ? "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
-                                      : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-300"
-                                  }`}
-                                >
-                                  {step.label}
-                                </button>
-                              );
-                            })}
-                          </div>
+                          {/* Stepper bolinhas conectadas */}
+                          {(() => {
+                            const etapaAtual = subEtapasCartao.findIndex((item) => item.id === subEtapaPagamento);
+                            return (
+                              <div className="relative flex items-center justify-between px-1">
+                                <div className="absolute left-3 right-3 top-3 h-0.5 bg-slate-200 rounded-full" aria-hidden="true" />
+                                <div
+                                  className="absolute left-3 top-3 h-0.5 rounded-full transition-all duration-500"
+                                  style={{
+                                    width: `calc((100% - 1.5rem) * ${etapaAtual / Math.max(subEtapasCartao.length - 1, 1)})`,
+                                    background: "linear-gradient(90deg, #8B4F23, #A05D2B)",
+                                  }}
+                                  aria-hidden="true"
+                                />
+                                {subEtapasCartao.map((step, index) => {
+                                  const ativa = subEtapaPagamento === step.id;
+                                  const concluida = index < etapaAtual;
+                                  const liberado = index <= etapaAtual;
+                                  return (
+                                    <button
+                                      key={step.id}
+                                      type="button"
+                                      disabled={!liberado}
+                                      onClick={() => liberado && setSubEtapaPagamento(step.id)}
+                                      className="relative z-10 flex flex-col items-center group disabled:cursor-not-allowed"
+                                      title={step.label}
+                                    >
+                                      <span
+                                        className={`flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold transition-all duration-300 ring-2 ${
+                                          ativa
+                                            ? "bg-gradient-to-br from-[#8B4F23] to-[#A05D2B] text-white ring-[#E0B13C]/40 shadow scale-110"
+                                            : concluida
+                                            ? "bg-[#8B4F23] text-white ring-white"
+                                            : "bg-white text-slate-400 ring-white border border-slate-200"
+                                        }`}
+                                      >
+                                        {concluida ? (
+                                          <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        ) : (
+                                          index + 1
+                                        )}
+                                      </span>
+                                      <span className={`mt-1 text-[9px] font-semibold uppercase tracking-wider transition-colors ${
+                                        ativa ? "text-[#8B4F23]" : concluida ? "text-slate-600" : "text-slate-400"
+                                      }`}>
+                                        {step.label}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
                         </div>
 
                         <div className="p-4 sm:p-5">
