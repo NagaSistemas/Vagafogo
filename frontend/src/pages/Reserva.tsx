@@ -28,9 +28,6 @@ export function Reserva() {
             className="h-20 w-20 sm:h-24 sm:w-24 rounded-full border-4 border-[#8B4F23]/20 object-cover shadow-lg"
             loading="eager"
           />
-          <span className="text-[11px] font-bold uppercase tracking-[0.32em] text-[#8B4F23] bg-[#8B4F23]/10 px-4 py-1.5 rounded-full border border-[#8B4F23]/15">
-            Reservas
-          </span>
           <h1 className="font-display text-2xl sm:text-3xl md:text-4xl font-bold text-[#2D1E0F] leading-tight">
             Reserve sua experiência no Vagafogo
           </h1>
