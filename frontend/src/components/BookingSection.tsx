@@ -1096,23 +1096,17 @@ export function BookingSection() {
 
   useEffect(() => {
     setParticipantesPorGrupo((prev) => {
-      const chavesValidas = new Set(gruposParticipacao.map((grupo) => grupo.chave));
-      const algumGrupoAtivo = Object.entries(prev).some(
-        ([chave, mapa]) => chavesValidas.has(chave) && somarMapa(mapa) > 0
-      );
       const proximo: ParticipantesPorGrupo = {};
 
-      gruposParticipacao.forEach((grupo, grupoIndex) => {
+      gruposParticipacao.forEach((grupo) => {
         const anterior = prev[grupo.chave] ?? {};
         const mapaGrupo: TipoClienteQuantidade = {};
-        tiposClientesAtivos.forEach((tipo, tipoIndex) => {
+        tiposClientesAtivos.forEach((tipo) => {
           const chaveTipo = obterChaveTipo(tipo);
           const existente = obterValorMapa(anterior, tipo);
-          if (Number.isFinite(existente)) {
-            mapaGrupo[chaveTipo] = Number(existente);
-          } else {
-            mapaGrupo[chaveTipo] = !algumGrupoAtivo && grupoIndex === 0 && tipoIndex === 0 ? 1 : 0;
-          }
+          // Preserva valor anterior quando válido; caso contrário começa em 0.
+          // Sem auto-default de 1 — o cliente decide quem participa de cada grupo.
+          mapaGrupo[chaveTipo] = Number.isFinite(existente) ? Number(existente) : 0;
         });
         proximo[grupo.chave] = mapaGrupo;
       });
