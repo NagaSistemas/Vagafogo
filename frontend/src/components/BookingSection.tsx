@@ -3017,7 +3017,7 @@ export function BookingSection() {
                 </div>
 
                 {/* Wrapper de conteúdo — flex-1 com scroll interno no mobile */}
-                <div className="flex-1 overflow-y-auto -mx-4 px-4 sm:mx-0 sm:px-0 lg:overflow-visible lg:flex-none">
+                <div className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden lg:overflow-visible lg:flex-none">
 
                 {/* ============ ETAPA 1 — DATA ============ */}
                 {etapa === 1 && (
@@ -4077,7 +4077,7 @@ export function BookingSection() {
 
                 </div>{/* fim do wrapper de conteúdo scrollável */}
 
-                <div className="sticky bottom-0 -mx-4 px-4 pt-4 pb-2 sm:pb-0 sm:pt-6 mt-auto sm:mt-10 bg-gradient-to-t from-white via-white/95 to-white/0 border-t border-slate-200 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between sm:relative sm:mx-0 sm:px-0 sm:bg-transparent">
+                <div className="sticky bottom-0 pt-4 pb-2 sm:pb-0 sm:pt-6 mt-auto sm:mt-10 bg-gradient-to-t from-white via-white/95 to-white/0 border-t border-slate-200 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between sm:relative sm:bg-transparent">
                   <button
                     type="button"
                     onClick={handleVoltarEtapa}
