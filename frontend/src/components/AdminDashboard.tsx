@@ -13471,8 +13471,8 @@ const totalParticipantesDoDia = useMemo(() => {
                   <h3 className="text-base font-semibold text-slate-900">Disparar fila de emails pendentes</h3>
                 </div>
                 <p className="text-sm text-slate-600">
-                  Envia emails de confirmacao para reservas pagas <strong>a partir da data escolhida</strong>.
-                  Reservas anteriores serao ignoradas.
+                  Envia confirmacao para reservas pagas cuja <strong>data da visita</strong> seja
+                  igual ou posterior à data escolhida. Considera a data do agendamento, não a data de criação da reserva.
                 </p>
               </div>
             </div>
@@ -13480,7 +13480,7 @@ const totalParticipantesDoDia = useMemo(() => {
             <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
               <label className="flex flex-col gap-1.5 flex-1 sm:max-w-xs">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-                  Disparar apenas a partir de
+                  Data da visita ≥
                 </span>
                 <input
                   type="date"
@@ -13509,7 +13509,8 @@ const totalParticipantesDoDia = useMemo(() => {
 
             {emailDataMinima && (
               <p className="mt-3 text-xs text-amber-800/80">
-                <strong>Atenção:</strong> reservas com data anterior a {dayjs(emailDataMinima).format('DD/MM/YYYY')} não receberão email.
+                <strong>Atenção:</strong> reservas cuja <strong>visita</strong> seja anterior a {dayjs(emailDataMinima).format('DD/MM/YYYY')} não receberão email
+                (mesmo se a reserva tiver sido criada recentemente).
               </p>
             )}
           </div>
