@@ -1595,6 +1595,30 @@ export function BookingSection() {
     return 0;
   };
 
+  // Preço unitário (por pessoa) de um tipo de cliente no contexto de um grupo (combo ou pacote).
+  const precoPorTipoNoGrupo = (grupo: GrupoParticipacao, tipo: TipoCliente): number => {
+    if (grupo.tipo === "pacote" && grupo.pacote) {
+      return obterPrecoPorTipo(grupo.pacote.precosPorTipo, tipo, grupo.pacote);
+    }
+    if (grupo.tipo === "combo" && grupo.combo) {
+      const combo = grupo.combo;
+      if (hasCustomComboPricing(combo)) {
+        return obterPrecoPorTipo(combo.precosPorTipo, tipo, combo);
+      }
+      const valorCombo = Number(combo.preco);
+      if (Number.isFinite(valorCombo) && valorCombo > 0) {
+        return valorCombo;
+      }
+      // Soma do preço de cada pacote do combo p/ esse tipo, com possível desconto
+      const total = combo.pacoteIds.reduce((acc, pacoteId) => {
+        const pacote = pacotesPorId.get(pacoteId);
+        return pacote ? acc + obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote) : acc;
+      }, 0);
+      return combo.desconto && combo.desconto > 0 ? total * (1 - combo.desconto / 100) : total;
+    }
+    return 0;
+  };
+
   const calcularTotal = () =>
     gruposParticipacao.reduce(
       (total, grupo) =>
@@ -3423,10 +3447,18 @@ export function BookingSection() {
                         {tiposClientesAtivos.map((tipo) => {
                           const chave = obterChaveTipo(tipo);
                           const valor = Number(obterValorMapa(participantesPorGrupo[grupo.chave] ?? {}, tipo) ?? 0);
+                          const precoUnitario = precoPorTipoNoGrupo(grupo, tipo);
                           return (
                             <div key={chave} className="flex items-center justify-between gap-2">
                               <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
+                                <div className="flex items-baseline gap-1.5 flex-wrap">
+                                  <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
+                                  {precoUnitario > 0 && (
+                                    <span className="text-[11px] font-semibold text-[#8B4F23]">
+                                      {formatCurrency(precoUnitario)} <span className="font-normal text-slate-400">/pessoa</span>
+                                    </span>
+                                  )}
+                                </div>
                                 {tipo.descricao && (
                                   <p className="text-[10px] text-slate-400 truncate">{tipo.descricao}</p>
                                 )}
