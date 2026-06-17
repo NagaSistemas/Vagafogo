@@ -4447,6 +4447,86 @@ const totalParticipantesDoDia = useMemo(() => {
       .filter(Boolean);
   };
 
+  const reservasAgendaResumo = useMemo(() => {
+    const grupos = Object.keys(reservas)
+      .sort((a, b) => {
+        const aIndefinido = a.toLowerCase().includes('especificado');
+        const bIndefinido = b.toLowerCase().includes('especificado');
+        if (aIndefinido && !bIndefinido) return 1;
+        if (!aIndefinido && bIndefinido) return -1;
+        return compararHorariosComIndefinidosNoFim(a, b);
+      })
+      .map((horario) => {
+        const filtradas = (reservas[horario] ?? []).filter(reservaAtendeFiltrosAgenda);
+        if (filtradas.length === 0) return null;
+
+        const totalPessoas = filtradas.reduce(
+          (acc, reserva) => acc + calcularParticipantes(reserva),
+          0
+        );
+        const totalChegadasHorario = filtradas.filter(
+          (reserva) => reserva.chegou === true
+        ).length;
+        const faturamentoHorario = filtradas.reduce((acc, reserva) => {
+          const valor = Number(reserva.valor ?? 0);
+          return acc + (Number.isFinite(valor) ? valor : 0);
+        }, 0);
+        const tituloHorario = horario.toLowerCase().includes('especificado')
+          ? 'Sem horario definido'
+          : horario;
+
+        return {
+          horario,
+          tituloHorario,
+          reservas: filtradas,
+          totalPessoas,
+          totalReservasHorario: filtradas.length,
+          totalChegadasHorario,
+          faturamentoHorario,
+        };
+      })
+      .filter(
+        (grupo): grupo is {
+          horario: string;
+          tituloHorario: string;
+          reservas: Reserva[];
+          totalPessoas: number;
+          totalReservasHorario: number;
+          totalChegadasHorario: number;
+          faturamentoHorario: number;
+        } => Boolean(grupo)
+      );
+
+    const reservasFiltradas = grupos.flatMap((grupo) => grupo.reservas);
+    const totalReservas = reservasFiltradas.length;
+    const totalParticipantes = grupos.reduce((acc, grupo) => acc + grupo.totalPessoas, 0);
+    const totalChegadas = grupos.reduce((acc, grupo) => acc + grupo.totalChegadasHorario, 0);
+    const faturamento = grupos.reduce((acc, grupo) => acc + grupo.faturamentoHorario, 0);
+
+    return {
+      grupos,
+      totalReservas,
+      totalParticipantes,
+      totalChegadas,
+      totalPendentes: Math.max(totalReservas - totalChegadas, 0),
+      totalPreReservas: reservasFiltradas.filter((reserva) => statusEhPreReserva(reserva)).length,
+      totalPets: reservasFiltradas.filter((reserva) => reserva.temPet === true).length,
+      totalManuais: reservasFiltradas.filter((reserva) => reserva.origem === 'manual').length,
+      totalCheckout: reservasFiltradas.filter((reserva) => reserva.origem !== 'manual').length,
+      faturamento,
+      gruposTotal: grupos.length,
+      primeiroHorario: grupos[0]?.tituloHorario ?? 'Sem horario',
+    };
+  }, [
+    reservas,
+    filtroAtividadeNormalizado,
+    filtroChegada,
+    filtroStatusReserva,
+    filtroOrigemReserva,
+    filtroPerfilReserva,
+    pacotes,
+  ]);
+
 
 
 
@@ -8650,6 +8730,48 @@ const totalParticipantesDoDia = useMemo(() => {
             </div>
           </div>
 
+          <div className="admin-reservas-overview admin-tab-hero__section-shell admin-tab-hero__section-shell--soft">
+            <div className="admin-reservas-overview__headline">
+              <div className="admin-reservas-overview__headline-icon">
+                <FaClipboardList className="h-5 w-5" />
+              </div>
+              <div className="admin-reservas-overview__headline-copy">
+                <span className="admin-reservas-overview__eyebrow">Resumo filtrado</span>
+                <strong>{reservasAgendaResumo.totalReservas.toLocaleString('pt-BR')} reserva{reservasAgendaResumo.totalReservas !== 1 ? 's' : ''}</strong>
+                <p>
+                  {reservasAgendaResumo.gruposTotal.toLocaleString('pt-BR')} horario{reservasAgendaResumo.gruposTotal !== 1 ? 's' : ''} · {reservasAgendaResumo.totalParticipantes.toLocaleString('pt-BR')} participante{reservasAgendaResumo.totalParticipantes !== 1 ? 's' : ''}
+                </p>
+              </div>
+            </div>
+
+            <div className="admin-reservas-overview__metrics">
+              <div className="admin-reservas-overview__metric">
+                <span><FaClock className="h-3.5 w-3.5" />Primeiro horario</span>
+                <strong>{reservasAgendaResumo.primeiroHorario}</strong>
+              </div>
+              <div className="admin-reservas-overview__metric">
+                <span><FaCheck className="h-3.5 w-3.5" />Chegadas</span>
+                <strong>{reservasAgendaResumo.totalChegadas.toLocaleString('pt-BR')}</strong>
+              </div>
+              <div className="admin-reservas-overview__metric">
+                <span><FaClock className="h-3.5 w-3.5" />Pendentes</span>
+                <strong>{reservasAgendaResumo.totalPendentes.toLocaleString('pt-BR')}</strong>
+              </div>
+              <div className="admin-reservas-overview__metric">
+                <span><FaQrcode className="h-3.5 w-3.5" />Checkout</span>
+                <strong>{reservasAgendaResumo.totalCheckout.toLocaleString('pt-BR')}</strong>
+              </div>
+              <div className="admin-reservas-overview__metric">
+                <span><FaClipboardList className="h-3.5 w-3.5" />Manual</span>
+                <strong>{reservasAgendaResumo.totalManuais.toLocaleString('pt-BR')}</strong>
+              </div>
+              <div className="admin-reservas-overview__metric">
+                <span><FaMoneyBillWave className="h-3.5 w-3.5" />Faturamento</span>
+                <strong>{formatarValor(reservasAgendaResumo.faturamento)}</strong>
+              </div>
+            </div>
+          </div>
+
           <div className={`grid gap-6 ${mostrarCalendario ? 'lg:grid-cols-[320px_minmax(0,1fr)]' : 'lg:grid-cols-1'}`}>
 
             {mostrarCalendario && (
@@ -8841,7 +8963,7 @@ const totalParticipantesDoDia = useMemo(() => {
                 </div>
               )}
 
-              <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <article className="admin-reservas-panel overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
 
               {false && <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
 
@@ -8928,7 +9050,7 @@ const totalParticipantesDoDia = useMemo(() => {
 
               </div>}
 
-              <div className="hidden lg:block">
+              <div className="hidden">
 
                 <div className="admin-reservas-board overflow-x-auto">
 
@@ -9967,15 +10089,15 @@ const totalParticipantesDoDia = useMemo(() => {
 
               </div>)}
 
-              {/* Mobile Cards */}
+              {/* Reservation Cards */}
 
-              <div className="lg:hidden space-y-4">
+              <div className="admin-reservas-card-board space-y-5">
 
-                {Object.keys(reservas).length === 0 ? (
+                {reservasAgendaResumo.totalReservas === 0 ? (
 
-                  <div className="text-center py-8 text-slate-500">
+                  <div className="admin-reservas-empty-state">
 
-                    Nenhuma reserva encontrada para esta data.
+                    Nenhuma reserva encontrada para esta data e filtros.
 
                   </div>
 
