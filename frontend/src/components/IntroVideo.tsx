@@ -86,11 +86,6 @@ export function IntroVideo() {
         </svg>
       </button>
 
-      {/* Marca Vagafogo flutuante (canto top) */}
-      <div className="absolute top-6 left-6 md:top-8 md:left-8 flex items-center gap-2 text-white/85 text-sm font-bold uppercase tracking-[0.3em]">
-        <span className="h-1.5 w-1.5 rounded-full bg-[#E0B13C] animate-pulse" />
-        Vagafogo
-      </div>
     </div>
   );
 }

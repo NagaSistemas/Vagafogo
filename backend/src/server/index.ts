@@ -10,6 +10,7 @@ import {
 } from "../services/reservaRetention";
 import {
   excluirEmailDaFila,
+  excluirEmailsEmMassa,
   enviarEmailManual,
   listarFilaEmailsConfirmacao,
   processarEmailsConfirmacaoPendentes,
@@ -82,17 +83,47 @@ app.post('/test-update-status/:reservaId', async (req, res) => {
 // Query params:
 //   ?incluir_antigas=true  -> processa reservas com data anterior a hoje (cuidado!)
 //   ?limite=N              -> limite de envios por execucao (default 50)
+//   ?data_minima=YYYY-MM-DD -> so envia para reservas com data >= esta data
 app.post('/process-emails', async (req, res) => {
   try {
     const incluirAntigas = req.query?.incluir_antigas === 'true';
     const limiteParam = Number(req.query?.limite ?? '');
     const limite = Number.isFinite(limiteParam) && limiteParam > 0 ? limiteParam : undefined;
+    const dataMinimaParam = typeof req.query?.data_minima === 'string' ? req.query.data_minima : undefined;
 
-    const resultado = await processarEmailsConfirmacaoPendentes({ incluirAntigas, limite });
+    const resultado = await processarEmailsConfirmacaoPendentes({
+      incluirAntigas,
+      limite,
+      dataMinima: dataMinimaParam,
+    });
     res.json({ success: true, ...resultado });
   } catch (error: any) {
     console.error('Erro ao processar emails:', error);
     res.status(500).json({ error: error?.message || 'Erro desconhecido' });
+  }
+});
+
+// Excluir varios emails da fila de uma vez
+// Body: { reservaIds: string[] }
+app.post('/emails/excluir-em-massa', async (req, res) => {
+  try {
+    const raw = (req.body as { reservaIds?: unknown })?.reservaIds;
+    if (!Array.isArray(raw)) {
+      res.status(400).json({ success: false, error: 'reservaIds deve ser um array.' });
+      return;
+    }
+    const reservaIds = raw
+      .map((id) => (typeof id === 'string' ? id.trim() : ''))
+      .filter((id) => id.length > 0);
+    if (reservaIds.length === 0) {
+      res.status(400).json({ success: false, error: 'Informe ao menos 1 reserva.' });
+      return;
+    }
+    const resultado = await excluirEmailsEmMassa(reservaIds);
+    res.json({ success: true, ...resultado });
+  } catch (error: any) {
+    console.error('Erro ao excluir emails em massa:', error);
+    res.status(500).json({ success: false, error: error?.message || 'Erro desconhecido' });
   }
 });
 

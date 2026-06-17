@@ -60,13 +60,14 @@ export function HeroSection() {
 
           {/* Título principal */}
           <h1
-            className="font-display mb-6 text-5xl font-bold leading-[1.08] tracking-tight text-white drop-shadow-2xl md:text-7xl lg:text-8xl animate-hero-reveal"
+            className="font-display mb-6 text-4xl sm:text-5xl md:text-7xl lg:text-8xl font-bold leading-[1.1] tracking-tight text-white drop-shadow-2xl animate-hero-reveal"
             style={{ animationDelay: "350ms" }}
           >
-            Descubra o{" "}
-            <em className="not-italic text-[#E0B13C]">Santuário</em>
-            <br className="hidden sm:block" />
-            <em className="not-italic text-[#E0B13C]">Vagafogo</em>
+            Descubra o
+            <br />
+            <em className="not-italic text-[#E0B13C] block sm:inline">Santuário</em>
+            <span className="hidden sm:inline"> </span>
+            <em className="not-italic text-[#E0B13C] block sm:inline">Vagafogo</em>
           </h1>
 
           {/* Subtítulo */}

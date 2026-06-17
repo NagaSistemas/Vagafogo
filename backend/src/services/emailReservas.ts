@@ -351,6 +351,8 @@ type ProcessarPendentesOptions = {
   incluirAntigas?: boolean;
   /** Limite maximo de envios por execucao (defesa em profundidade). Default: 50 */
   limite?: number;
+  /** Data minima (YYYY-MM-DD). So envia para reservas com data >= dataMinima. Default: hoje. */
+  dataMinima?: string;
 };
 
 const PROCESSAMENTO_LIMITE_PADRAO = 50;
@@ -388,12 +390,18 @@ export async function processarEmailsConfirmacaoPendentes(
   const limite = Math.max(1, options.limite ?? PROCESSAMENTO_LIMITE_PADRAO);
   const incluirAntigas = options.incluirAntigas === true;
   const hojeISO = new Date().toISOString().slice(0, 10);
+  // dataMinima sobrepoe o filtro padrao de "hoje em diante"
+  const dataMinimaValida = typeof options.dataMinima === "string"
+    && /^\d{4}-\d{2}-\d{2}$/.test(options.dataMinima)
+    ? options.dataMinima
+    : null;
+  const corteData = incluirAntigas ? null : (dataMinimaValida ?? hojeISO);
 
   const snapshot = await getDocs(
     query(collection(db, "reservas"), where("status", "==", "pago")),
   );
 
-  // Separa quem realmente vai ser processado: pendente de email + data >= hoje (a menos que incluirAntigas)
+  // Separa quem realmente vai ser processado: pendente de email + data >= corteData (a menos que incluirAntigas)
   type Candidato = { id: string; reserva: ReservaEmail };
   const candidatos: Candidato[] = [];
   let ignoradosPorData = 0;
@@ -403,9 +411,9 @@ export async function processarEmailsConfirmacaoPendentes(
     if (reserva.emailEnviado === true) continue;
     if (reserva.emailFilaExcluido === true) continue;
 
-    if (!incluirAntigas) {
+    if (corteData) {
       const dataReserva = obterDataReservaISO(reserva.data);
-      if (!dataReserva || dataReserva < hojeISO) {
+      if (!dataReserva || dataReserva < corteData) {
         ignoradosPorData += 1;
         continue;
       }
@@ -523,6 +531,36 @@ export async function tentarReenviarEmailConfirmacaoReserva(
     }).catch(() => undefined);
     throw error;
   }
+}
+
+export async function excluirEmailsEmMassa(reservaIds: string[]) {
+  const idsLimpos = Array.from(new Set(reservaIds.map((id) => String(id).trim()).filter(Boolean)));
+  if (idsLimpos.length === 0) {
+    return { excluidos: 0, naoEncontrados: 0, jaEnviados: 0, erros: 0, total: 0 };
+  }
+
+  let excluidos = 0;
+  let naoEncontrados = 0;
+  let jaEnviados = 0;
+  let erros = 0;
+
+  for (const id of idsLimpos) {
+    try {
+      const resultado = await excluirEmailDaFila(id);
+      if (resultado.excluido) {
+        excluidos += 1;
+      } else if (resultado.motivo === "RESERVA_NAO_ENCONTRADA") {
+        naoEncontrados += 1;
+      } else if (resultado.motivo === "JA_ENVIADO") {
+        jaEnviados += 1;
+      }
+    } catch (error) {
+      erros += 1;
+      console.error(`[email] falha ao excluir reserva ${id} da fila em massa:`, error);
+    }
+  }
+
+  return { excluidos, naoEncontrados, jaEnviados, erros, total: idsLimpos.length };
 }
 
 export async function excluirEmailDaFila(reservaId: string) {

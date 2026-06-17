@@ -1756,6 +1756,21 @@ export default function AdminDashboard() {
 
   const [emailRegistroFiltro, setEmailRegistroFiltro] = useState<'todos' | 'erro' | 'pendente' | 'enviado'>('todos');
 
+  // Disparar fila: data minima a partir da qual emails serao enviados
+  const [emailDataMinima, setEmailDataMinima] = useState<string>(() => dayjs().format('YYYY-MM-DD'));
+  const [processandoFila, setProcessandoFila] = useState(false);
+
+  // Busca textual na fila
+  const [emailBuscaTexto, setEmailBuscaTexto] = useState('');
+
+  // Filtro por data da reserva (range)
+  const [emailFiltroDataDe, setEmailFiltroDataDe] = useState('');
+  const [emailFiltroDataAte, setEmailFiltroDataAte] = useState('');
+
+  // Selecao em massa
+  const [emailSelecionados, setEmailSelecionados] = useState<Set<string>>(new Set());
+  const [excluindoEmMassa, setExcluindoEmMassa] = useState(false);
+
   // Dashboard
   const [dashboardInicio, setDashboardInicio] = useState(() => dayjs().subtract(30, 'day').format('YYYY-MM-DD'));
 
@@ -3198,12 +3213,55 @@ const totalParticipantesDoDia = useMemo(() => {
   }, [whatsappStatus]);
 
   const emailRegistroItensFiltrados = useMemo(() => {
-    if (emailRegistroFiltro === 'todos') {
-      return emailFila.itens;
+    let itens = emailFila.itens;
+
+    if (emailRegistroFiltro !== 'todos') {
+      itens = itens.filter((item) => item.statusEmail === emailRegistroFiltro);
     }
 
-    return emailFila.itens.filter((item) => item.statusEmail === emailRegistroFiltro);
-  }, [emailFila.itens, emailRegistroFiltro]);
+    const termo = emailBuscaTexto.trim().toLowerCase();
+    if (termo) {
+      itens = itens.filter((item) => {
+        const alvo = `${item.nome ?? ''} ${item.email ?? ''} ${item.telefone ?? ''} ${item.atividade ?? ''}`.toLowerCase();
+        return alvo.includes(termo);
+      });
+    }
+
+    if (emailFiltroDataDe) {
+      itens = itens.filter((item) => {
+        const dataItem = (item.data ?? '').slice(0, 10);
+        return dataItem && dataItem >= emailFiltroDataDe;
+      });
+    }
+    if (emailFiltroDataAte) {
+      itens = itens.filter((item) => {
+        const dataItem = (item.data ?? '').slice(0, 10);
+        return dataItem && dataItem <= emailFiltroDataAte;
+      });
+    }
+
+    return itens;
+  }, [emailFila.itens, emailRegistroFiltro, emailBuscaTexto, emailFiltroDataDe, emailFiltroDataAte]);
+
+  const todosFiltradosSelecionados = useMemo(() => {
+    if (emailRegistroItensFiltrados.length === 0) return false;
+    return emailRegistroItensFiltrados.every((item) => emailSelecionados.has(item.id));
+  }, [emailRegistroItensFiltrados, emailSelecionados]);
+
+  const toggleSelecionarTodosFiltrados = () => {
+    setEmailSelecionados((prev) => {
+      if (todosFiltradosSelecionados) {
+        const proximo = new Set(prev);
+        emailRegistroItensFiltrados.forEach((item) => proximo.delete(item.id));
+        return proximo;
+      }
+      const proximo = new Set(prev);
+      emailRegistroItensFiltrados.forEach((item) => {
+        if (item.statusEmail !== 'enviado') proximo.add(item.id);
+      });
+      return proximo;
+    });
+  };
 
   // Pesquisa Clientes
 
@@ -5024,6 +5082,85 @@ const totalParticipantesDoDia = useMemo(() => {
     } finally {
       setEmailAcaoCarregando(null);
     }
+  };
+
+  const processarFilaEmails = async () => {
+    const dataMinima = emailDataMinima || dayjs().format('YYYY-MM-DD');
+    const confirmar = window.confirm(
+      `Disparar a fila de emails apenas para reservas a partir de ${dayjs(dataMinima).format('DD/MM/YYYY')}?\n\n` +
+      `Reservas anteriores a esta data serao IGNORADAS.`
+    );
+    if (!confirmar) return;
+
+    try {
+      setProcessandoFila(true);
+      const url = `${API_BASE}/process-emails?data_minima=${encodeURIComponent(dataMinima)}`;
+      const response = await fetch(url, { method: 'POST' });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.error || `Status ${response.status}`);
+      }
+
+      const enviados = Number(data?.emailsEnviados ?? 0);
+      const ignorados = Number(data?.ignoradosPorData ?? 0);
+      const falhas = Number(data?.falhas ?? 0);
+      setFeedback({
+        type: enviados > 0 || falhas === 0 ? 'success' : 'error',
+        message: `Disparo concluido: ${enviados} enviado(s), ${falhas} falha(s), ${ignorados} ignorado(s) por data.`,
+      });
+      await carregarFilaEmails();
+    } catch (error: any) {
+      console.error('Erro ao processar fila de emails:', error);
+      setFeedback({ type: 'error', message: error?.message || 'Erro ao processar fila.' });
+    } finally {
+      setProcessandoFila(false);
+    }
+  };
+
+  const excluirEmailsSelecionadosEmMassa = async () => {
+    const ids = Array.from(emailSelecionados);
+    if (ids.length === 0) return;
+
+    const confirmar = window.confirm(
+      `Excluir ${ids.length} email(s) selecionado(s) da fila? Esta acao nao pode ser desfeita.`
+    );
+    if (!confirmar) return;
+
+    try {
+      setExcluindoEmMassa(true);
+      const response = await fetch(`${API_BASE}/emails/excluir-em-massa`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reservaIds: ids }),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok || data?.success === false) {
+        throw new Error(data?.error || `Status ${response.status}`);
+      }
+
+      setFeedback({
+        type: 'success',
+        message: `${data?.excluidos ?? 0} email(s) removido(s) da fila.`,
+      });
+      setEmailSelecionados(new Set());
+      await carregarFilaEmails();
+    } catch (error: any) {
+      console.error('Erro ao excluir emails em massa:', error);
+      setFeedback({ type: 'error', message: error?.message || 'Erro ao excluir em massa.' });
+    } finally {
+      setExcluindoEmMassa(false);
+    }
+  };
+
+  const toggleSelecaoEmail = (id: string) => {
+    setEmailSelecionados((prev) => {
+      const proximo = new Set(prev);
+      if (proximo.has(id)) proximo.delete(id);
+      else proximo.add(id);
+      return proximo;
+    });
   };
 
   const carregarStatusWhatsapp = useCallback(async () => {
@@ -13325,6 +13462,58 @@ const totalParticipantesDoDia = useMemo(() => {
             ]}
           />
 
+          {/* Disparar fila com data minima */}
+          <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-amber-50/60 p-5 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <FaPaperPlane className="h-4 w-4 text-amber-600" />
+                  <h3 className="text-base font-semibold text-slate-900">Disparar fila de emails pendentes</h3>
+                </div>
+                <p className="text-sm text-slate-600">
+                  Envia emails de confirmacao para reservas pagas <strong>a partir da data escolhida</strong>.
+                  Reservas anteriores serao ignoradas.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+              <label className="flex flex-col gap-1.5 flex-1 sm:max-w-xs">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  Disparar apenas a partir de
+                </span>
+                <input
+                  type="date"
+                  value={emailDataMinima}
+                  onChange={(e) => setEmailDataMinima(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200 focus:border-amber-400"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={processarFilaEmails}
+                disabled={processandoFila || !emailDataMinima}
+                className="inline-flex items-center justify-center gap-2 rounded-full bg-amber-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <FaPaperPlane className="h-3.5 w-3.5" />
+                {processandoFila ? 'Disparando...' : 'Disparar fila agora'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmailDataMinima(dayjs().format('YYYY-MM-DD'))}
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+              >
+                Hoje
+              </button>
+            </div>
+
+            {emailDataMinima && (
+              <p className="mt-3 text-xs text-amber-800/80">
+                <strong>Atenção:</strong> reservas com data anterior a {dayjs(emailDataMinima).format('DD/MM/YYYY')} não receberão email.
+              </p>
+            )}
+          </div>
+
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center sm:justify-between">
@@ -13563,6 +13752,90 @@ const totalParticipantesDoDia = useMemo(() => {
               </div>
             </div>
 
+            {/* Filtros adicionais */}
+            <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-end">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Buscar</span>
+                <div className="relative">
+                  <FaSearch className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={emailBuscaTexto}
+                    onChange={(e) => setEmailBuscaTexto(e.target.value)}
+                    placeholder="Nome, e-mail, telefone, atividade"
+                    className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
+                  />
+                </div>
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Data da reserva (de)</span>
+                <input
+                  type="date"
+                  value={emailFiltroDataDe}
+                  onChange={(e) => setEmailFiltroDataDe(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">Até</span>
+                <input
+                  type="date"
+                  value={emailFiltroDataAte}
+                  onChange={(e) => setEmailFiltroDataAte(e.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
+                />
+              </label>
+            </div>
+
+            {(emailBuscaTexto || emailFiltroDataDe || emailFiltroDataAte) && (
+              <button
+                type="button"
+                onClick={() => { setEmailBuscaTexto(''); setEmailFiltroDataDe(''); setEmailFiltroDataAte(''); }}
+                className="mt-2 text-xs text-slate-500 underline hover:text-slate-700"
+              >
+                Limpar filtros
+              </button>
+            )}
+
+            {/* Toolbar de selecao em massa */}
+            {emailRegistroItensFiltrados.length > 0 && (
+              <div className="mt-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <label className="flex items-center gap-2 text-sm font-medium text-slate-700 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={todosFiltradosSelecionados}
+                    onChange={toggleSelecionarTodosFiltrados}
+                    className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  {todosFiltradosSelecionados ? 'Desmarcar todos' : 'Selecionar todos'} ({emailRegistroItensFiltrados.length})
+                </label>
+
+                {emailSelecionados.size > 0 && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-semibold text-slate-600">
+                      {emailSelecionados.size} selecionado(s)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setEmailSelecionados(new Set())}
+                      className="text-xs text-slate-500 underline hover:text-slate-700"
+                    >
+                      Limpar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={excluirEmailsSelecionadosEmMassa}
+                      disabled={excluindoEmMassa}
+                      className="inline-flex items-center gap-1.5 rounded-full bg-rose-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <FaTrash className="h-3 w-3" />
+                      {excluindoEmMassa ? 'Excluindo...' : `Excluir ${emailSelecionados.size}`}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {emailFilaCarregando ? (
               <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-500">
                 Carregando registro de emails...
@@ -13599,10 +13872,27 @@ const totalParticipantesDoDia = useMemo(() => {
                         ? 'Erro em'
                         : 'Criado em';
 
+                  const selecionado = emailSelecionados.has(item.id);
+                  const podeSelecionar = item.statusEmail !== 'enviado';
                   return (
-                    <div key={item.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div
+                      key={item.id}
+                      className={`rounded-xl border bg-white p-4 shadow-sm transition ${
+                        selecionado ? 'border-emerald-300 bg-emerald-50/30' : 'border-slate-200'
+                      }`}
+                    >
                       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0">
+                        <div className="flex min-w-0 items-start gap-3">
+                          {podeSelecionar && (
+                            <input
+                              type="checkbox"
+                              checked={selecionado}
+                              onChange={() => toggleSelecaoEmail(item.id)}
+                              className="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                              aria-label={`Selecionar ${item.nome}`}
+                            />
+                          )}
+                          <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <h4 className="text-base font-semibold text-slate-900">{item.nome || 'Cliente'}</h4>
                             <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${statusClassName}`}>
@@ -13634,6 +13924,7 @@ const totalParticipantesDoDia = useMemo(() => {
                               {item.emailErro}
                             </p>
                           ) : null}
+                          </div>
                         </div>
 
                         <div className="shrink-0 text-left text-sm text-slate-500 lg:text-right">
