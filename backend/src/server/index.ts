@@ -19,6 +19,7 @@ import {
 import {
   desconectarWhatsApp,
   enviarBoasVindasWhatsapp,
+  enviarConfirmacaoWhatsapp,
   iniciarWhatsApp,
   obterStatusWhatsApp,
   encerrarWhatsAppSeMemoriaAlta,
@@ -239,6 +240,48 @@ app.post('/whatsapp/boas-vindas/:reservaId', async (req, res) => {
     res.json(resultado);
   } catch (error: any) {
     console.error('Erro ao enviar boas-vindas WhatsApp:', error);
+    res.status(500).json({ enviado: false, motivo: error?.message || 'erro' });
+  }
+});
+
+// Reenvio manual de confirmacao WhatsApp (caso o webhook tenha falhado, por ex)
+app.post('/whatsapp/confirmacao/:reservaId', async (req, res) => {
+  try {
+    const { reservaId } = req.params;
+    if (!reservaId) {
+      return res.status(400).json({ enviado: false, motivo: 'reserva_id_ausente' });
+    }
+
+    const { doc, getDoc, updateDoc } = await import('firebase/firestore');
+    const { db } = await import('../services/firebase');
+
+    const reservaRef = doc(db, 'reservas', reservaId);
+    const reservaSnap = await getDoc(reservaRef);
+    if (!reservaSnap.exists()) {
+      return res.status(404).json({ enviado: false, motivo: 'reserva_nao_encontrada' });
+    }
+
+    const reserva = reservaSnap.data() as Record<string, any>;
+
+    // Reenvio manual ignora o flag de "ja_enviado" — admin pode forcar
+    const reservaForcada = { ...reserva, whatsappConfirmacaoEnviado: false };
+    // E ignora a config "desativada" tambem (reenvio manual e explicito)
+    const resultado = await enviarConfirmacaoWhatsapp(reservaId, reservaForcada, {
+      confirmacaoAutomaticaAtiva: true,
+    });
+
+    if (resultado.enviado) {
+      await updateDoc(reservaRef, {
+        whatsappConfirmacaoEnviado: true,
+        dataWhatsappConfirmacao: new Date(),
+        whatsappConfirmacaoMensagem: resultado.mensagem ?? '',
+        whatsappConfirmacaoErro: '',
+      });
+    }
+
+    res.json(resultado);
+  } catch (error: any) {
+    console.error('Erro ao enviar confirmacao WhatsApp:', error);
     res.status(500).json({ enviado: false, motivo: error?.message || 'erro' });
   }
 });

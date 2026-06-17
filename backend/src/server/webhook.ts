@@ -3,6 +3,7 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { obterCamposRetencaoReservaNaAtualizacao } from "../services/reservaRetention";
 import { enviarEmailConfirmacaoReserva } from "../services/emailReservas";
+import { enviarConfirmacaoWhatsapp } from "../services/whatsapp";
 
 type WebhookPayment = {
   status?: string;
@@ -156,6 +157,28 @@ async function handleWebhook(payload: WebhookPayload) {
       error,
     );
   }
+
+  // Disparo automatico de WhatsApp (em background, nao bloqueia o webhook)
+  void enviarConfirmacaoWhatsapp(externalReference, reserva)
+    .then(async (resultado) => {
+      if (resultado.enviado) {
+        await updateDoc(reservaRef, {
+          whatsappConfirmacaoEnviado: true,
+          dataWhatsappConfirmacao: new Date(),
+          whatsappConfirmacaoMensagem: resultado.mensagem ?? "",
+        }).catch(() => undefined);
+        console.log(`[webhook] WhatsApp confirmacao enviado para ${externalReference}.`);
+      } else if (resultado.motivo !== "desativado" && resultado.motivo !== "ja_enviado") {
+        await updateDoc(reservaRef, {
+          whatsappConfirmacaoErro: resultado.motivo ?? "erro",
+          dataWhatsappConfirmacaoErro: new Date(),
+        }).catch(() => undefined);
+        console.warn(`[webhook] WhatsApp confirmacao nao enviado para ${externalReference}: ${resultado.motivo}`);
+      }
+    })
+    .catch((error: any) => {
+      console.error(`[webhook] Erro ao enviar WhatsApp confirmacao para ${externalReference}:`, error);
+    });
 
   console.log(`[webhook] Reserva ${externalReference} atualizada.`);
 }

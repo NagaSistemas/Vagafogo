@@ -125,6 +125,10 @@ type WhatsappStatusPayload = {
 
 type WhatsappConfig = {
   mensagemBoasVindas?: string;
+  /** Liga/desliga o envio automatico de WhatsApp quando reserva e confirmada. */
+  confirmacaoAutomaticaAtiva?: boolean;
+  /** Template enviado quando o pagamento da reserva e confirmado. */
+  mensagemConfirmacaoAutomatica?: string;
 };
 
 type ResultadoEnvio = {
@@ -136,6 +140,9 @@ type ResultadoEnvio = {
 
 const TEMPLATE_BOAS_VINDAS_PADRAO =
   "Olá {nome}! 🌿 Seja muito bem-vindo(a) ao Santuário Vagafogo. É um prazer receber você hoje! Tenha uma experiência incrível.";
+
+const TEMPLATE_CONFIRMACAO_PADRAO =
+  "Olá {nome}! ✅ Sua reserva no Santuário Vagafogo foi confirmada com sucesso.\n\n📅 Data: {data}\n⏰ Horário: {horario}\n🎫 Atividade: {atividade}\n👥 Participantes: {participantes}\n💰 Valor: {valor}\n\nNos vemos em breve! 🌿";
 
 const currencyFormatter = new Intl.NumberFormat("pt-BR", {
   style: "currency",
@@ -861,6 +868,78 @@ export async function enviarBoasVindasWhatsapp(
     whatsappId = await obterNumeroWhatsapp(telefone);
   } catch (error) {
     console.warn("[whatsapp] Falha ao validar numero (cliente indisponivel):", error);
+    handleInitFailure(error);
+    return { enviado: false, motivo: "whatsapp_nao_conectado" };
+  }
+  if (!whatsappId) {
+    return { enviado: false, motivo: "telefone_sem_whatsapp" };
+  }
+
+  try {
+    await client.sendMessage(whatsappId, mensagem, { sendSeen: false });
+  } catch (error: any) {
+    scheduleIdleShutdown();
+    return { enviado: false, motivo: error?.message || "erro_envio" };
+  }
+
+  scheduleIdleShutdown();
+
+  return {
+    enviado: true,
+    mensagem,
+    telefone,
+  };
+}
+
+/**
+ * Dispara mensagem de confirmação automática quando a reserva é paga.
+ * Respeita a config `confirmacaoAutomaticaAtiva`. Idempotente: verifica
+ * `whatsappConfirmacaoEnviado` antes de enviar.
+ */
+export async function enviarConfirmacaoWhatsapp(
+  reservaId: string,
+  reserva: Record<string, any>,
+  configOverride?: WhatsappConfig
+): Promise<ResultadoEnvio> {
+  const config = configOverride ?? (await obterConfig());
+
+  if (config.confirmacaoAutomaticaAtiva === false) {
+    return { enviado: false, motivo: "desativado" };
+  }
+
+  if (reserva?.whatsappConfirmacaoEnviado === true) {
+    return { enviado: false, motivo: "ja_enviado" };
+  }
+
+  const telefone = normalizarTelefone(reserva?.telefone);
+  if (!telefone) {
+    return { enviado: false, motivo: "telefone_invalido" };
+  }
+
+  const template = (config.mensagemConfirmacaoAutomatica || TEMPLATE_CONFIRMACAO_PADRAO).trim();
+  if (!template) {
+    return { enviado: false, motivo: "mensagem_vazia" };
+  }
+
+  iniciarWhatsApp();
+  clearIdleTimer();
+
+  const pronto = await aguardarWhatsAppPronto(WHATSAPP_SEND_READY_TIMEOUT_MS);
+  if (!pronto || !client || status !== "ready") {
+    scheduleIdleShutdown();
+    return { enviado: false, motivo: "whatsapp_nao_conectado" };
+  }
+
+  const mensagem = montarMensagem(template, {
+    ...reserva,
+    id: reservaId,
+  });
+
+  let whatsappId: string | null;
+  try {
+    whatsappId = await obterNumeroWhatsapp(telefone);
+  } catch (error) {
+    console.warn("[whatsapp] Falha ao validar numero (confirmacao):", error);
     handleInitFailure(error);
     return { enviado: false, motivo: "whatsapp_nao_conectado" };
   }

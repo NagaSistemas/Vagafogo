@@ -397,6 +397,11 @@ interface WhatsappConfig {
   mensagemBoasVindas: string;
   modelosMensagemManual?: WhatsappModeloMensagem[];
 
+  /** Liga/desliga o disparo de WhatsApp quando reserva e paga. */
+  whatsappConfirmacaoAtiva?: boolean;
+  /** Template do WhatsApp enviado automaticamente quando a reserva e paga. */
+  whatsappMensagemConfirmacao?: string;
+
 }
 
 interface TipoCliente {
@@ -4967,6 +4972,12 @@ const totalParticipantesDoDia = useMemo(() => {
             ? rawMensagens.assuntoConfirmacaoEmail
             : emailAssuntoConfirmacaoPadrao;
 
+        const whatsappConfirmacaoAtiva = rawLegado.confirmacaoAutomaticaAtiva === true;
+        const whatsappMensagemConfirmacao =
+          typeof rawLegado.mensagemConfirmacaoAutomatica === 'string'
+            ? rawLegado.mensagemConfirmacaoAutomatica
+            : '';
+
         setWhatsappConfig({
           ativo: rawEmail.ativo !== false,
           assuntoConfirmacaoEmail,
@@ -4974,6 +4985,8 @@ const totalParticipantesDoDia = useMemo(() => {
           mensagemConfirmacaoManual,
           mensagemBoasVindas,
           modelosMensagemManual,
+          whatsappConfirmacaoAtiva,
+          whatsappMensagemConfirmacao,
         });
 
     } catch (error) {
@@ -5124,6 +5137,9 @@ const totalParticipantesDoDia = useMemo(() => {
           doc(db, 'configuracoes', 'whatsapp'),
           {
             mensagemBoasVindas,
+            // Disparo automatico de WhatsApp quando reserva e paga
+            confirmacaoAutomaticaAtiva: whatsappConfig.whatsappConfirmacaoAtiva ?? false,
+            mensagemConfirmacaoAutomatica: (whatsappConfig.whatsappMensagemConfirmacao ?? '').trim(),
             atualizadoEm: new Date(),
           },
           { merge: true }
@@ -14360,6 +14376,66 @@ const totalParticipantesDoDia = useMemo(() => {
                       Atualizar
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Confirmacao automatica (quando reserva e paga) */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">Confirmacao automatica</h3>
+                  <p className="text-sm text-slate-500">
+                    WhatsApp disparado automaticamente quando o pagamento da reserva e confirmado.
+                  </p>
+                </div>
+
+                <label className="flex items-center gap-2 text-xs font-semibold uppercase text-slate-500">
+                  <input
+                    type="checkbox"
+                    checked={whatsappConfig.whatsappConfirmacaoAtiva === true}
+                    onChange={(e) => setWhatsappConfig((prev) => ({ ...prev, whatsappConfirmacaoAtiva: e.target.checked }))}
+                  />
+                  {whatsappConfig.whatsappConfirmacaoAtiva ? 'Ativada' : 'Desativada'}
+                </label>
+              </div>
+
+              <div className="mt-4 space-y-4">
+                <label className="text-xs font-semibold uppercase text-slate-500">
+                  Mensagem enviada quando o pagamento for confirmado
+                  <textarea
+                    value={whatsappConfig.whatsappMensagemConfirmacao ?? ''}
+                    onChange={(e) => setWhatsappConfig((prev) => ({ ...prev, whatsappMensagemConfirmacao: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+                    rows={7}
+                    placeholder={`Olá {nome}! ✅ Sua reserva foi confirmada.\nData: {data}\nHorário: {horario}\nValor: {valor}`}
+                  />
+                </label>
+
+                <div className="flex flex-wrap gap-2">
+                  {whatsappPlaceholders.map((placeholder) => (
+                    <button
+                      key={'confirma-' + placeholder}
+                      type="button"
+                      onClick={() => {
+                        const atual = whatsappConfig.whatsappMensagemConfirmacao ?? '';
+                        setWhatsappConfig((prev) => ({ ...prev, whatsappMensagemConfirmacao: `${atual}${placeholder}` }));
+                      }}
+                      className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:border-emerald-300 hover:text-emerald-600"
+                    >
+                      {placeholder}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 flex items-start gap-2">
+                  <svg className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2L1 21h22L12 2zm0 4l7.53 13H4.47L12 6zm-1 5v4h2v-4h-2zm0 6v2h2v-2h-2z"/>
+                  </svg>
+                  <p className="text-[11px] text-amber-900 leading-snug">
+                    <strong>Atenção:</strong> o disparo só acontece se o WhatsApp estiver conectado.
+                    Reservas pagas presencialmente (manuais) <strong>não</strong> recebem este disparo.
+                  </p>
                 </div>
               </div>
             </div>
