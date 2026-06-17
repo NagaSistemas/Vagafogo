@@ -17,6 +17,8 @@ type PerguntaCondicional = {
   pergunta: string;
   tipo: "sim_nao" | "texto";
   obrigatoria: boolean;
+  emojiSim?: string;
+  emojiNao?: string;
 };
 
 type PerguntaPersonalizada = {
@@ -24,6 +26,8 @@ type PerguntaPersonalizada = {
   pergunta: string;
   tipo: "sim_nao" | "texto";
   obrigatoria: boolean;
+  emojiSim?: string;
+  emojiNao?: string;
   perguntaCondicional?: PerguntaCondicional;
 };
 
@@ -32,6 +36,8 @@ type PerguntaCondicionalRespostaPayload = {
   tipo: "sim_nao" | "texto";
   obrigatoria: boolean;
   resposta: string;
+  emojiSim?: string;
+  emojiNao?: string;
 };
 
 type PerguntaPersonalizadaRespostaPayload = {
@@ -42,6 +48,8 @@ type PerguntaPersonalizadaRespostaPayload = {
   tipo: "sim_nao" | "texto";
   obrigatoria: boolean;
   resposta: string;
+  emojiSim?: string;
+  emojiNao?: string;
   perguntaCondicional?: PerguntaCondicionalRespostaPayload;
 };
 
@@ -1672,6 +1680,8 @@ export function BookingSection() {
           tipo: pergunta.tipo,
           obrigatoria: pergunta.obrigatoria,
           resposta: pergunta.tipo === "texto" ? valorBase : valorBase,
+          ...(pergunta.emojiSim ? { emojiSim: pergunta.emojiSim } : {}),
+          ...(pergunta.emojiNao ? { emojiNao: pergunta.emojiNao } : {}),
         };
 
         if (pergunta.perguntaCondicional) {
@@ -1712,6 +1722,8 @@ export function BookingSection() {
                 tipo: cond.tipo,
                 obrigatoria: cond.obrigatoria,
                 resposta: valorCondicional,
+                ...(cond.emojiSim ? { emojiSim: cond.emojiSim } : {}),
+                ...(cond.emojiNao ? { emojiNao: cond.emojiNao } : {}),
               };
             }
           }
@@ -2438,72 +2450,70 @@ export function BookingSection() {
                 className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-[#FAF7F2] p-4 shadow-2xl shadow-[#8B4F23]/5 sm:p-7 md:p-8 relative overflow-hidden"
               >
                 <div className="mb-6 sm:mb-8">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-widest text-[#8B4F23]">
-                        Etapa {etapa + 1} de {wizardSteps.length}
-                      </p>
-                      <h2 className="mt-1 text-xl font-bold text-[#2D1E0F]">
-                        {wizardSteps[etapa].title}
-                      </h2>
-                      <p className="mt-1 text-sm text-slate-500">
-                        {wizardSteps[etapa].description}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 h-1.5 w-full rounded-full bg-slate-100">
+                  {/* Stepper bolinhas conectadas — sempre visível */}
+                  <div className="relative flex items-center justify-between px-1 mb-5">
+                    {/* Linha de progresso atrás das bolinhas */}
+                    <div className="absolute left-4 right-4 top-1/2 -translate-y-1/2 h-0.5 bg-slate-200 rounded-full" aria-hidden="true" />
                     <div
-                      className="h-1.5 rounded-full transition-all duration-500"
+                      className="absolute left-4 top-1/2 -translate-y-1/2 h-0.5 rounded-full transition-all duration-500"
                       style={{
-                        width: `${((etapa + 1) / wizardSteps.length) * 100}%`,
+                        width: `calc((100% - 2rem) * ${etapa / Math.max(wizardSteps.length - 1, 1)})`,
                         background: "linear-gradient(90deg, #8B4F23, #A05D2B)",
                       }}
+                      aria-hidden="true"
                     />
-                  </div>
-
-                  <div className="mt-5 hidden grid-cols-2 gap-3 sm:grid md:grid-cols-5 lg:hidden">
                     {wizardSteps.map((stepInfo, idx) => {
                       const ativo = idx === etapa;
+                      const concluida = idx < etapa;
                       const disponivel = idx <= etapa;
                       return (
                         <button
                           key={stepInfo.title}
                           type="button"
                           disabled={!disponivel}
-                          onClick={() =>
-                            disponivel && setEtapa(idx as EtapaReserva)
-                          }
-                          className={`flex items-center gap-3 rounded-2xl border p-3 text-left transition ${
-                            ativo
-                              ? "border-[#8B4F23]/30 bg-[#8B4F23]/5"
-                              : disponivel
-                              ? "border-slate-200 bg-white hover:bg-slate-50"
-                              : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400"
-                          }`}
+                          onClick={() => disponivel && setEtapa(idx as EtapaReserva)}
+                          className="relative z-10 flex flex-col items-center group disabled:cursor-not-allowed"
+                          aria-label={`${idx + 1}. ${stepInfo.title}`}
+                          title={stepInfo.title}
                         >
                           <span
-                            className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold flex-shrink-0 ${
+                            className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-all duration-300 ring-4 ${
                               ativo
-                                ? "bg-[#8B4F23] text-white"
-                                : disponivel
-                                ? "bg-[#8B4F23]/20 text-[#8B4F23]"
-                                : "bg-slate-200 text-slate-500"
+                                ? "bg-gradient-to-br from-[#8B4F23] to-[#A05D2B] text-white ring-[#E0B13C]/30 shadow-lg scale-110"
+                                : concluida
+                                ? "bg-[#8B4F23] text-white ring-white"
+                                : "bg-white text-slate-400 ring-white border-2 border-slate-200"
                             }`}
                           >
-                            {idx + 1}
+                            {concluida ? (
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth={3} viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              idx + 1
+                            )}
                           </span>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-slate-900">
-                              {stepInfo.title}
-                            </p>
-                            <p className="truncate text-xs text-slate-500">
-                              {stepInfo.description}
-                            </p>
-                          </div>
+                          <span className={`mt-1.5 text-[9px] sm:text-[10px] font-semibold uppercase tracking-wider transition-colors hidden sm:block ${
+                            ativo ? "text-[#8B4F23]" : concluida ? "text-slate-600" : "text-slate-400"
+                          }`}>
+                            {stepInfo.title}
+                          </span>
                         </button>
                       );
                     })}
+                  </div>
+
+                  {/* Título da etapa atual */}
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-widest text-[#8B4F23]">
+                      Etapa {etapa + 1} de {wizardSteps.length}
+                    </p>
+                    <h2 className="mt-1 text-xl font-bold text-[#2D1E0F]">
+                      {wizardSteps[etapa].title}
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-500">
+                      {wizardSteps[etapa].description}
+                    </p>
                   </div>
                 </div>
 
