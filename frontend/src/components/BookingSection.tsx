@@ -3054,13 +3054,6 @@ export function BookingSection() {
                 {/* ============ ETAPA 0 — PACOTES (seleção simples) ============ */}
                 {etapa === 0 && (
                   <div ref={pacotesRef} className="space-y-5">
-                    <div className="mb-1">
-                      <h3 className="text-xl font-bold text-[#2D1E0F]">Escolha as atividades</h3>
-                      <p className="text-sm text-slate-500 mt-1">
-                        Marque uma ou mais. Se a combinação bater com um combo, o desconto é aplicado automaticamente.
-                      </p>
-                    </div>
-
                     {/* PACOTES — checkboxes simples */}
                     <div>
                       <p className="text-xs font-bold uppercase tracking-wider text-[#8B4F23] mb-2.5 flex items-center gap-2">
