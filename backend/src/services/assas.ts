@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { criarReserva } from "./reservas";
+import { criarReserva, type GrupoParticipacaoPayload } from "./reservas";
 import { reservaContaParaOcupacao } from "./reservaStatus";
 import { obterCamposRetencaoReservaNaAtualizacao } from "./reservaRetention";
 import { enviarEmailConfirmacaoReserva } from "./emailReservas";
@@ -23,6 +23,45 @@ const normalizarMapa = (mapa?: Record<string, number>) => {
   if (!mapa) return undefined;
   return Object.fromEntries(
     Object.entries(mapa).map(([chave, valor]) => [chave, normalizarNumero(valor)])
+  );
+};
+
+const normalizarGruposParticipacao = (grupos?: GrupoParticipacaoPayload[]) => {
+  if (!Array.isArray(grupos)) return [];
+  return grupos
+    .map((grupo) => {
+      const refId = grupo.refId?.toString().trim();
+      const participantesPorTipo = normalizarMapa(grupo.participantesPorTipo) ?? {};
+      const participantes = Math.max(
+        somarMapa(participantesPorTipo),
+        normalizarNumero(grupo.participantes)
+      );
+      const pacoteIds = Array.isArray(grupo.pacoteIds)
+        ? grupo.pacoteIds
+            .map((id) => id?.toString().trim())
+            .filter((id): id is string => Boolean(id))
+        : [];
+      return {
+        tipo: grupo.tipo === "combo" ? "combo" : "pacote",
+        refId,
+        nome: grupo.nome?.toString().trim() || (grupo.tipo === "combo" ? "Combo" : "Pacote"),
+        pacoteIds,
+        participantesPorTipo,
+        participantes,
+      };
+    })
+    .filter(
+      (grupo): grupo is GrupoParticipacaoPayload =>
+        Boolean(grupo.refId) && grupo.pacoteIds.length > 0 && grupo.participantes > 0
+    );
+};
+
+const normalizarHorariosPorPacote = (horarios?: Record<string, string>) => {
+  if (!horarios || typeof horarios !== "object") return {};
+  return Object.fromEntries(
+    Object.entries(horarios)
+      .map(([pacoteId, horario]) => [pacoteId.toString().trim(), (horario ?? "").toString().trim()])
+      .filter(([pacoteId, horario]) => Boolean(pacoteId) && Boolean(horario))
   );
 };
 
@@ -150,12 +189,18 @@ const obterVagasExtrasDisponibilidade = ({
 
 const calcularParticipantesReserva = (reserva: Record<string, any>) => {
   const participantesDeclarados = normalizarNumero(reserva.participantes);
+  const participantesGrupos = normalizarGruposParticipacao(reserva.gruposParticipacao).reduce(
+    (total, grupo) => total + grupo.participantes,
+    0
+  );
   const participantesMapa =
     reserva.participantesPorTipo && Object.keys(reserva.participantesPorTipo).length > 0
       ? somarMapa(reserva.participantesPorTipo)
       : 0;
   const base =
-    participantesMapa > 0
+    participantesGrupos > 0
+      ? participantesGrupos
+      : participantesMapa > 0
       ? participantesMapa
       : normalizarNumero(reserva.adultos) +
         normalizarNumero(reserva.criancas) +
@@ -182,6 +227,31 @@ const obterPacoteIdsReserva = (
     }
   });
   return encontrados;
+};
+
+const calcularParticipantesPorPacoteReserva = (
+  reserva: Record<string, any>,
+  pacotesPorNome: Map<string, string>
+) => {
+  const porPacote: Record<string, number> = {};
+  const grupos = normalizarGruposParticipacao(reserva.gruposParticipacao);
+
+  grupos.forEach((grupo) => {
+    grupo.pacoteIds.forEach((pacoteId) => {
+      porPacote[pacoteId] = (porPacote[pacoteId] ?? 0) + grupo.participantes;
+    });
+  });
+
+  if (Object.keys(porPacote).length > 0) {
+    return porPacote;
+  }
+
+  const participantes = calcularParticipantesReserva(reserva);
+  if (participantes <= 0) return porPacote;
+  obterPacoteIdsReserva(reserva, pacotesPorNome).forEach((pacoteId) => {
+    porPacote[pacoteId] = (porPacote[pacoteId] ?? 0) + participantes;
+  });
+  return porPacote;
 };
 
 type CreditCardPayload = {
@@ -221,8 +291,10 @@ export type CriarCobrancaPayload = {
   criancas: number;
   naoPagante: number;
   participantesPorTipo?: Record<string, number>;
+  gruposParticipacao?: GrupoParticipacaoPayload[];
   pacoteIds?: string[];
   comboId?: string | null;
+  horariosPorPacote?: Record<string, string>;
   billingType: "PIX" | "CREDIT_CARD";
   creditCard?: CreditCardPayload;
   creditCardHolderInfo?: CreditCardHolderInfo;
@@ -258,8 +330,10 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
     criancas,
     naoPagante,
     participantesPorTipo,
+    gruposParticipacao,
     pacoteIds,
     comboId,
+    horariosPorPacote,
     billingType,
     creditCard,
     creditCardHolderInfo,
@@ -271,6 +345,12 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
 
   const horarioFormatado = horario?.toString().trim();
   const participantesPorTipoNormalizado = normalizarMapa(participantesPorTipo);
+  const gruposParticipacaoNormalizados = normalizarGruposParticipacao(gruposParticipacao);
+  const participantesGrupos = gruposParticipacaoNormalizados.reduce(
+    (total, grupo) => total + grupo.participantes,
+    0
+  );
+  const horariosPorPacoteNormalizado = normalizarHorariosPorPacote(horariosPorPacote);
   const mapaAtivo =
     participantesPorTipoNormalizado &&
     Object.keys(participantesPorTipoNormalizado).length > 0;
@@ -279,6 +359,7 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
     : (adultos ?? 0) + (criancas ?? 0) + (bariatrica ?? 0);
   const participantesCalculados = participantesCalculadosBase + (naoPagante ?? 0);
   const participantesConsiderados = Math.max(
+    participantesGrupos + (naoPagante ?? 0),
     participantesCalculados,
     Number.isFinite(participantes) ? participantes : 0
   );
@@ -288,6 +369,24 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
         .filter((id): id is string => Boolean(id))
     : [];
   const comboIdNormalizado = comboId ? comboId.toString() : null;
+  const pacoteIdsDosGrupos = Array.from(
+    new Set(gruposParticipacaoNormalizados.flatMap((grupo) => grupo.pacoteIds))
+  );
+  const participantesPorPacoteSolicitados = gruposParticipacaoNormalizados.reduce<Record<string, number>>(
+    (mapa, grupo) => {
+      grupo.pacoteIds.forEach((pacoteId) => {
+        mapa[pacoteId] = (mapa[pacoteId] ?? 0) + grupo.participantes;
+      });
+      return mapa;
+    },
+    {}
+  );
+
+  if (Object.keys(participantesPorPacoteSolicitados).length === 0) {
+    pacoteIdsNormalizados.forEach((pacoteId) => {
+      participantesPorPacoteSolicitados[pacoteId] = participantesConsiderados;
+    });
+  }
 
   console.log("INFO Dados recebidos:", {
     nome: limparTexto(nome),
@@ -513,8 +612,8 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
 
     const pacoteIdsSelecionados = Array.from(
       new Set(
-        pacoteIdsNormalizados.length > 0
-          ? pacoteIdsNormalizados
+        pacoteIdsNormalizados.length > 0 || pacoteIdsDosGrupos.length > 0
+          ? [...pacoteIdsNormalizados, ...pacoteIdsDosGrupos]
           : obterPacoteIdsReserva({ atividade }, pacotesPorNome)
       )
     );
@@ -534,18 +633,22 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
         const horarioReserva = (dados.horario ?? dados.Horario ?? "")
           .toString()
           .trim();
-        const participantesReserva = calcularParticipantesReserva(dados);
-        if (participantesReserva <= 0) return;
-
-        const pacoteIdsReserva = obterPacoteIdsReserva(dados, pacotesPorNome);
-        if (pacoteIdsReserva.length === 0) return;
-
-        Array.from(new Set(pacoteIdsReserva)).forEach((pacoteId) => {
+        const horariosReserva = normalizarHorariosPorPacote(dados.horariosPorPacote);
+        const participantesPorPacoteReserva = calcularParticipantesPorPacoteReserva(
+          dados,
+          pacotesPorNome
+        );
+        Object.entries(participantesPorPacoteReserva).forEach(([pacoteId, participantesReserva]) => {
+          if (participantesReserva <= 0) return;
+          const horarioPacoteReserva = (horariosReserva[pacoteId] ?? horarioReserva)
+            .toString()
+            .trim();
           reservasPorPacoteDia[pacoteId] =
             (reservasPorPacoteDia[pacoteId] ?? 0) + participantesReserva;
-          if (horarioReserva && horarioReserva === horarioFormatado) {
-            reservasPorPacoteHorario[pacoteId] =
-              (reservasPorPacoteHorario[pacoteId] ?? 0) + participantesReserva;
+          if (horarioPacoteReserva) {
+            const chaveHorario = `${pacoteId}__${horarioPacoteReserva}`;
+            reservasPorPacoteHorario[chaveHorario] =
+              (reservasPorPacoteHorario[chaveHorario] ?? 0) + participantesReserva;
           }
         });
       });
@@ -553,24 +656,36 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
       for (const pacoteId of pacoteIdsSelecionados) {
         const pacoteInfo = pacotesPorId.get(pacoteId);
         const limite = Number(pacoteInfo?.limite ?? 0);
+        const horarioPacote = horariosPorPacoteNormalizado[pacoteId] ?? horarioFormatado;
+        const participantesSolicitados =
+          participantesPorPacoteSolicitados[pacoteId] ?? 0;
+
+        if (participantesSolicitados <= 0) {
+          res.status(400).json({
+            status: "erro",
+            error: `Informe participantes para o pacote ${pacoteInfo?.nome ?? "selecionado"} ou remova este pacote da reserva.`,
+          });
+          return;
+        }
+
         if (!Number.isFinite(limite) || limite <= 0) continue;
         const ehFaixa =
           pacoteInfo?.modoHorario === "intervalo" ||
           (pacoteInfo?.horarios?.length ?? 0) === 0;
 
         if (!ehFaixa && (pacoteInfo?.horarios?.length ?? 0) > 0) {
-          if (!pacoteInfo!.horarios.includes(horarioFormatado ?? "")) {
+          if (!pacoteInfo!.horarios.includes(horarioPacote ?? "")) {
             res.status(400).json({
               status: "erro",
-              error: `O pacote ${pacoteInfo?.nome ?? "selecionado"} não possui o horário ${horarioFormatado}.`,
+              error: `O pacote ${pacoteInfo?.nome ?? "selecionado"} não possui o horário ${horarioPacote}.`,
             });
             return;
           }
-          const chave = `${data}-${pacoteId}-${horarioFormatado}`;
+          const chave = `${data}-${pacoteId}-${horarioPacote}`;
           if (disponibilidadeHorarios && disponibilidadeHorarios[chave] === false) {
             res.status(400).json({
               status: "erro",
-              error: `O horário ${horarioFormatado} está indisponível para o pacote ${pacoteInfo?.nome ?? "selecionado"} nesta data.`,
+              error: `O horário ${horarioPacote} está indisponível para o pacote ${pacoteInfo?.nome ?? "selecionado"} nesta data.`,
             });
             return;
           }
@@ -578,15 +693,15 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
 
         const reservados = ehFaixa
           ? reservasPorPacoteDia[pacoteId] ?? 0
-          : reservasPorPacoteHorario[pacoteId] ?? 0;
+          : reservasPorPacoteHorario[`${pacoteId}__${horarioPacote}`] ?? 0;
         const vagasExtras = obterVagasExtrasDisponibilidade({
           dataStr: data,
           pacoteId,
-          horario: ehFaixa ? undefined : horarioFormatado,
+          horario: ehFaixa ? undefined : horarioPacote,
           vagasExtras: disponibilidadeVagasExtras,
         });
         const restante = limite + vagasExtras - reservados;
-        if (participantesConsiderados > restante) {
+        if (participantesSolicitados > restante) {
           res.status(400).json({
             status: "erro",
             error: `Limite do pacote ${pacoteInfo?.nome ?? "selecionado"} atingido para ${ehFaixa ? "esta data" : "o horário escolhido"}. Restam apenas ${Math.max(
@@ -619,10 +734,12 @@ export async function criarCobrancaHandler(req: Request, res: Response): Promise
       criancas,
       naoPagante,
       participantesPorTipo: participantesPorTipoNormalizado,
+      gruposParticipacao: gruposParticipacaoNormalizados,
       pacoteIds: pacoteIdsNormalizados,
       comboId: comboIdNormalizado,
       observacao: "",
       horario: horarioFormatado,
+      horariosPorPacote: horariosPorPacoteNormalizado,
       status: "aguardando",
       temPet,
       perguntasPersonalizadas,

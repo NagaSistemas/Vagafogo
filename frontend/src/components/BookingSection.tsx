@@ -98,12 +98,36 @@ type Combo = {
   ativo: boolean;
 };
 
+type GrupoParticipacao = {
+  chave: string;
+  tipo: "combo" | "pacote";
+  refId: string;
+  nome: string;
+  descricao: string;
+  pacoteIds: string[];
+  combo?: Combo;
+  pacote?: Pacote;
+};
+
+type GrupoParticipacaoPayload = {
+  tipo: "combo" | "pacote";
+  refId: string;
+  nome: string;
+  pacoteIds: string[];
+  participantesPorTipo: TipoClienteQuantidade;
+  participantes: number;
+};
+
+type ParticipantesPorGrupo = Record<string, TipoClienteQuantidade>;
+
 type ReservaResumo = {
   id?: string;
   data?: string;
   horario?: string;
+  horariosPorPacote?: Record<string, string>;
   participantes?: number;
   participantesPorTipo?: Record<string, number>;
+  gruposParticipacao?: GrupoParticipacaoPayload[];
   adultos?: number;
   criancas?: number;
   bariatrica?: number;
@@ -192,6 +216,32 @@ const normalizarNumero = (valor: unknown) => {
 const somarMapa = (mapa?: Record<string, number>) => {
   if (!mapa) return 0;
   return Object.values(mapa).reduce((total, valor) => total + normalizarNumero(valor), 0);
+};
+
+const normalizarMapaQuantidade = (mapa?: Record<string, number>) => {
+  if (!mapa) return {};
+  return Object.fromEntries(
+    Object.entries(mapa).map(([chave, valor]) => [chave, normalizarNumero(valor)])
+  ) as TipoClienteQuantidade;
+};
+
+const somarMapasQuantidade = (mapas: Array<Record<string, number> | undefined>) => {
+  const total: TipoClienteQuantidade = {};
+  mapas.forEach((mapa) => {
+    Object.entries(mapa ?? {}).forEach(([chave, valor]) => {
+      total[chave] = (total[chave] ?? 0) + normalizarNumero(valor);
+    });
+  });
+  return total;
+};
+
+const somarGruposParticipacao = (grupos?: Array<{ participantesPorTipo?: Record<string, number>; participantes?: number }>) => {
+  if (!Array.isArray(grupos)) return 0;
+  return grupos.reduce((total, grupo) => {
+    const totalMapa = somarMapa(grupo.participantesPorTipo);
+    const declarado = normalizarNumero(grupo.participantes);
+    return total + Math.max(totalMapa, declarado);
+  }, 0);
 };
 
 type PersonalField = "nome" | "email" | "cpf" | "telefone";
@@ -368,12 +418,15 @@ const parseHorarioParaMinutos = (valor: string) => {
 
 const calcularParticipantesReserva = (reserva: ReservaResumo) => {
   const participantesDeclarados = normalizarNumero(reserva.participantes);
+  const participantesGrupos = somarGruposParticipacao(reserva.gruposParticipacao);
   const participantesMapa =
     reserva.participantesPorTipo && Object.keys(reserva.participantesPorTipo).length > 0
       ? somarMapa(reserva.participantesPorTipo)
       : 0;
   const base =
-    participantesMapa > 0
+    participantesGrupos > 0
+      ? participantesGrupos
+      : participantesMapa > 0
       ? participantesMapa
       : normalizarNumero(reserva.adultos) +
         normalizarNumero(reserva.criancas) +
@@ -405,7 +458,7 @@ export function BookingSection() {
   const [subEtapaPagamento, setSubEtapaPagamento] = useState<"metodo" | "form">("metodo");
   const [diasBloqueados, setDiasBloqueados] = useState<Set<string>>(new Set());
   const [diaSelecionadoFechado, setDiaSelecionadoFechado] = useState(false);
-  const [participantesPorTipo, setParticipantesPorTipo] = useState<TipoClienteQuantidade>({});
+  const [participantesPorGrupo, setParticipantesPorGrupo] = useState<ParticipantesPorGrupo>({});
   const [naoPagante] = useState<number>(0);
   const [temPet, setTemPet] = useState<boolean | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -494,7 +547,7 @@ export function BookingSection() {
     setHorario("");
     setHorariosPorPacote({});
     setSubEtapaPagamento("metodo");
-    setParticipantesPorTipo({});
+    setParticipantesPorGrupo({});
     setTemPet(null);
     setCheckoutUrl(null);
     setFormaPagamento("CREDIT_CARD");
@@ -756,26 +809,6 @@ export function BookingSection() {
 
   const tiposClientesAtivos = useMemo(() => tiposClientes, [tiposClientes]);
 
-  useEffect(() => {
-    setParticipantesPorTipo((prev) => {
-      const proximo: TipoClienteQuantidade = {};
-      tiposClientesAtivos.forEach((tipo, index) => {
-        const chave = obterChaveTipo(tipo);
-        const existente = obterValorMapa(prev, tipo);
-        if (Number.isFinite(existente)) {
-          proximo[chave] = Number(existente);
-          return;
-        }
-        if (Object.keys(prev).length === 0 && index === 0) {
-          proximo[chave] = 1;
-          return;
-        }
-        proximo[chave] = 0;
-      });
-      return proximo;
-    });
-  }, [tiposClientesAtivos]);
-
   const hasCustomComboPricing = useCallback(
     (combo?: Combo | null) => {
       if (!combo) return false;
@@ -824,6 +857,16 @@ export function BookingSection() {
     [pacotes, selectedPackages]
   );
 
+  const pacotesPorId = useMemo(() => {
+    const mapa = new Map<string, Pacote>();
+    pacotes.forEach((pacote) => {
+      if (pacote.id) {
+        mapa.set(pacote.id, pacote);
+      }
+    });
+    return mapa;
+  }, [pacotes]);
+
   const pacotesPorNome = useMemo(() => {
     const mapa = new Map<string, string>();
     pacotes.forEach((pacote) => {
@@ -854,36 +897,72 @@ export function BookingSection() {
     [pacotesPorNome]
   );
 
+  const calcularParticipantesPorPacoteReserva = useCallback(
+    (reserva: ReservaResumo) => {
+      const porPacote: Record<string, number> = {};
+      if (Array.isArray(reserva.gruposParticipacao)) {
+        reserva.gruposParticipacao.forEach((grupo) => {
+          const participantesGrupo = Math.max(
+            somarMapa(grupo.participantesPorTipo),
+            normalizarNumero(grupo.participantes)
+          );
+          if (participantesGrupo <= 0) return;
+          const pacoteIdsGrupo =
+            Array.isArray(grupo.pacoteIds) && grupo.pacoteIds.length > 0
+              ? grupo.pacoteIds
+              : grupo.tipo === "pacote" && grupo.refId
+              ? [grupo.refId]
+              : [];
+          Array.from(new Set(pacoteIdsGrupo.map((id) => id?.toString()).filter(Boolean))).forEach((pacoteId) => {
+            porPacote[pacoteId] = (porPacote[pacoteId] ?? 0) + participantesGrupo;
+          });
+        });
+      }
+
+      if (Object.keys(porPacote).length > 0) {
+        return porPacote;
+      }
+
+      const participantes = calcularParticipantesReserva(reserva);
+      if (participantes <= 0) return porPacote;
+      obterPacoteIdsReserva(reserva).forEach((pacoteId) => {
+        porPacote[pacoteId] = (porPacote[pacoteId] ?? 0) + participantes;
+      });
+      return porPacote;
+    },
+    [obterPacoteIdsReserva]
+  );
+
   const reservasPorPacoteHorario = useMemo(() => {
     const mapa: Record<string, number> = {};
     reservasDia.forEach((reserva) => {
       const horarioReserva = (reserva.horario ?? "").toString().trim();
-      if (!horarioReserva) return;
-      const participantes = calcularParticipantesReserva(reserva);
-      if (participantes <= 0) return;
-      const pacoteIds = obterPacoteIdsReserva(reserva);
-      if (pacoteIds.length === 0) return;
-      Array.from(new Set(pacoteIds)).forEach((pacoteId) => {
-        const chave = `${pacoteId}__${horarioReserva}`;
+      const horariosReserva =
+        reserva.horariosPorPacote && typeof reserva.horariosPorPacote === "object"
+          ? reserva.horariosPorPacote
+          : {};
+      const participantesPorPacote = calcularParticipantesPorPacoteReserva(reserva);
+      Object.entries(participantesPorPacote).forEach(([pacoteId, participantes]) => {
+        const horarioPacote = (horariosReserva[pacoteId] ?? horarioReserva).toString().trim();
+        if (!horarioPacote || participantes <= 0) return;
+        const chave = `${pacoteId}__${horarioPacote}`;
         mapa[chave] = (mapa[chave] ?? 0) + participantes;
       });
     });
     return mapa;
-  }, [obterPacoteIdsReserva, reservasDia]);
+  }, [calcularParticipantesPorPacoteReserva, reservasDia]);
 
   const reservasPorPacoteDia = useMemo(() => {
     const mapa: Record<string, number> = {};
     reservasDia.forEach((reserva) => {
-      const participantes = calcularParticipantesReserva(reserva);
-      if (participantes <= 0) return;
-      const pacoteIds = obterPacoteIdsReserva(reserva);
-      if (pacoteIds.length === 0) return;
-      Array.from(new Set(pacoteIds)).forEach((pacoteId) => {
+      const participantesPorPacote = calcularParticipantesPorPacoteReserva(reserva);
+      Object.entries(participantesPorPacote).forEach(([pacoteId, participantes]) => {
+        if (participantes <= 0) return;
         mapa[pacoteId] = (mapa[pacoteId] ?? 0) + participantes;
       });
     });
     return mapa;
-  }, [obterPacoteIdsReserva, reservasDia]);
+  }, [calcularParticipantesPorPacoteReserva, reservasDia]);
 
   const comboAtivo = useMemo(() => {
     if (selectedPackages.length === 0) return undefined;
@@ -893,6 +972,118 @@ export function BookingSection() {
         c.pacoteIds.every((id) => selectedPackages.includes(id))
     );
   }, [combos, selectedPackages]);
+
+  const gruposParticipacao = useMemo<GrupoParticipacao[]>(() => {
+    if (selectedPackages.length === 0) return [];
+    const idsSelecionados = new Set(selectedPackages);
+    const grupos: GrupoParticipacao[] = [];
+
+    combos
+      .filter(
+        (combo) =>
+          combo.id &&
+          combo.ativo &&
+          combo.pacoteIds.length > 1 &&
+          combo.pacoteIds.every((id) => idsSelecionados.has(id) && pacotesPorId.has(id))
+      )
+      .sort((a, b) => b.pacoteIds.length - a.pacoteIds.length)
+      .forEach((combo) => {
+        const nomes = combo.pacoteIds
+          .map((id) => pacotesPorId.get(id)?.nome)
+          .filter(Boolean)
+          .join(" + ");
+        grupos.push({
+          chave: `combo:${combo.id}`,
+          tipo: "combo",
+          refId: combo.id!,
+          nome: combo.nome,
+          descricao: nomes ? `Participa de ${nomes}` : "Participa do combo completo",
+          pacoteIds: combo.pacoteIds,
+          combo,
+        });
+      });
+
+    selectedPacotes.forEach((pacote) => {
+      if (!pacote.id) return;
+      grupos.push({
+        chave: `pacote:${pacote.id}`,
+        tipo: "pacote",
+        refId: pacote.id,
+        nome: `Somente ${pacote.nome}`,
+        descricao: `Para quem vai participar apenas de ${pacote.nome}`,
+        pacoteIds: [pacote.id],
+        pacote,
+      });
+    });
+
+    return grupos;
+  }, [combos, pacotesPorId, selectedPackages, selectedPacotes]);
+
+  useEffect(() => {
+    setParticipantesPorGrupo((prev) => {
+      const chavesValidas = new Set(gruposParticipacao.map((grupo) => grupo.chave));
+      const algumGrupoAtivo = Object.entries(prev).some(
+        ([chave, mapa]) => chavesValidas.has(chave) && somarMapa(mapa) > 0
+      );
+      const proximo: ParticipantesPorGrupo = {};
+
+      gruposParticipacao.forEach((grupo, grupoIndex) => {
+        const anterior = prev[grupo.chave] ?? {};
+        const mapaGrupo: TipoClienteQuantidade = {};
+        tiposClientesAtivos.forEach((tipo, tipoIndex) => {
+          const chaveTipo = obterChaveTipo(tipo);
+          const existente = obterValorMapa(anterior, tipo);
+          if (Number.isFinite(existente)) {
+            mapaGrupo[chaveTipo] = Number(existente);
+          } else {
+            mapaGrupo[chaveTipo] = !algumGrupoAtivo && grupoIndex === 0 && tipoIndex === 0 ? 1 : 0;
+          }
+        });
+        proximo[grupo.chave] = mapaGrupo;
+      });
+
+      return proximo;
+    });
+  }, [gruposParticipacao, tiposClientesAtivos]);
+
+  const participantesPorTipo = useMemo(
+    () =>
+      somarMapasQuantidade(
+        gruposParticipacao.map((grupo) => participantesPorGrupo[grupo.chave])
+      ),
+    [gruposParticipacao, participantesPorGrupo]
+  );
+
+  const participantesPorPacoteAtual = useMemo(() => {
+    const mapa: Record<string, number> = {};
+    gruposParticipacao.forEach((grupo) => {
+      const totalGrupo = somarMapa(participantesPorGrupo[grupo.chave]);
+      if (totalGrupo <= 0) return;
+      grupo.pacoteIds.forEach((pacoteId) => {
+        mapa[pacoteId] = (mapa[pacoteId] ?? 0) + totalGrupo;
+      });
+    });
+    return mapa;
+  }, [gruposParticipacao, participantesPorGrupo]);
+
+  const gruposParticipacaoPayload = useMemo<GrupoParticipacaoPayload[]>(
+    () =>
+      gruposParticipacao
+        .map((grupo) => {
+          const participantesGrupo = normalizarMapaQuantidade(participantesPorGrupo[grupo.chave]);
+          const participantes = somarMapa(participantesGrupo);
+          return {
+            tipo: grupo.tipo,
+            refId: grupo.refId,
+            nome: grupo.nome,
+            pacoteIds: grupo.pacoteIds,
+            participantesPorTipo: participantesGrupo,
+            participantes,
+          };
+        })
+        .filter((grupo) => grupo.participantes > 0),
+    [gruposParticipacao, participantesPorGrupo]
+  );
 
   const temPacoteFaixa = useMemo(
     () =>
@@ -1059,50 +1250,50 @@ export function BookingSection() {
     disponibilidadeVagasExtras,
   ]);
 
-  const vagasRestantesFaixaDia = useMemo(() => {
-    let restante: number | null = null;
-    const dataStr = selectedDay?.toISOString().slice(0, 10) ?? "";
-
-    selectedPacotes.forEach((pacote) => {
-      if (!pacote.id) return;
-      const ehFaixa =
-        pacote.modoHorario === "intervalo" || (pacote.horarios?.length ?? 0) === 0;
-      if (!ehFaixa) return;
-      const limite = Number(pacote.limite ?? 0);
-      if (!Number.isFinite(limite) || limite <= 0) return;
-      const reservados = reservasPorPacoteDia[pacote.id] ?? 0;
-      const vagasExtras = obterVagasExtrasDisponibilidade({
-        dataStr,
-        pacoteId: pacote.id,
-        vagasExtras: disponibilidadeVagasExtras,
-      });
-      const pacoteRestante = limite + vagasExtras - reservados;
-      restante = restante === null ? pacoteRestante : Math.min(restante, pacoteRestante);
-    });
-    return restante;
-  }, [reservasPorPacoteDia, selectedDay, selectedPacotes, disponibilidadeVagasExtras]);
-
   const totalParticipantesSelecionados = useMemo(
     () => somarMapa(participantesPorTipo) + naoPagante,
     [naoPagante, participantesPorTipo]
   );
 
-  const limiteHorarioSelecionado = useMemo(() => {
-    if (!horario) return null;
-    const restante = vagasRestantesPorHorario[horario];
-    return typeof restante === "number" ? restante : null;
-  }, [horario, vagasRestantesPorHorario]);
+  const vagasRestantesPorPacoteAtual = useMemo(() => {
+    const mapa: Record<string, number | null> = {};
+    const dataStr = selectedDay?.toISOString().slice(0, 10) ?? "";
 
-  const limiteParticipantesAtual = useMemo(() => {
-    let limite: number | null = null;
-    if (typeof vagasRestantesFaixaDia === "number") {
-      limite = vagasRestantesFaixaDia;
-    }
-    if (typeof limiteHorarioSelecionado === "number") {
-      limite = limite === null ? limiteHorarioSelecionado : Math.min(limite, limiteHorarioSelecionado);
-    }
-    return limite;
-  }, [limiteHorarioSelecionado, vagasRestantesFaixaDia]);
+    selectedPacotes.forEach((pacote) => {
+      if (!pacote.id) return;
+      const limite = Number(pacote.limite ?? 0);
+      if (!Number.isFinite(limite) || limite <= 0) {
+        mapa[pacote.id] = null;
+        return;
+      }
+
+      const ehFaixa =
+        pacote.modoHorario === "intervalo" || (pacote.horarios?.length ?? 0) === 0;
+      const horarioPacote = horariosPorPacote[pacote.id] ?? horario;
+      const reservados = ehFaixa
+        ? reservasPorPacoteDia[pacote.id] ?? 0
+        : horarioPacote
+        ? reservasPorPacoteHorario[`${pacote.id}__${horarioPacote}`] ?? 0
+        : 0;
+      const vagasExtras = obterVagasExtrasDisponibilidade({
+        dataStr,
+        pacoteId: pacote.id,
+        horario: ehFaixa ? undefined : horarioPacote,
+        vagasExtras: disponibilidadeVagasExtras,
+      });
+      mapa[pacote.id] = limite + vagasExtras - reservados;
+    });
+
+    return mapa;
+  }, [
+    disponibilidadeVagasExtras,
+    horario,
+    horariosPorPacote,
+    reservasPorPacoteDia,
+    reservasPorPacoteHorario,
+    selectedDay,
+    selectedPacotes,
+  ]);
 
   const horariosComVagas = useMemo(
     () =>
@@ -1290,35 +1481,72 @@ export function BookingSection() {
 
   // Calcula total: soma de pacotes selecionados × qtd participantes por tipo.
   // Se a seleção bater com um combo, aplica preço/desconto especial.
-  const calcularTotal = () => {
-    let total = 0;
-    selectedPacotes.forEach((pacote) => {
-      const subtotal = tiposClientesAtivos.reduce((acc, tipo) => {
-        const quantidade = Number(obterValorMapa(participantesPorTipo, tipo) ?? 0);
-        const preco = obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote);
-        return acc + quantidade * preco;
-      }, 0);
-      total += subtotal;
-    });
+  const calcularTotalGrupo = (grupo: GrupoParticipacao, quantidades: TipoClienteQuantidade) => {
+    if (grupo.tipo === "combo" && grupo.combo) {
+      const combo = grupo.combo;
+      const totalParticipantesGrupo = somarMapa(quantidades);
+      if (totalParticipantesGrupo <= 0) return 0;
 
-    if (comboAtivo) {
-      if (hasCustomComboPricing(comboAtivo)) {
-        total = tiposClientesAtivos.reduce((acc, tipo) => {
-          const quantidade = Number(obterValorMapa(participantesPorTipo, tipo) ?? 0);
-          const preco = obterPrecoPorTipo(comboAtivo.precosPorTipo, tipo, comboAtivo);
+      if (hasCustomComboPricing(combo)) {
+        return tiposClientesAtivos.reduce((acc, tipo) => {
+          const quantidade = Number(obterValorMapa(quantidades, tipo) ?? 0);
+          const preco = obterPrecoPorTipo(combo.precosPorTipo, tipo, combo);
           return acc + quantidade * preco;
         }, 0);
-      } else {
-        const valorCombo = Number(comboAtivo.preco);
-        if (Number.isFinite(valorCombo) && valorCombo > 0) {
-          total = valorCombo * somarMapa(participantesPorTipo);
-        } else if (comboAtivo.desconto && comboAtivo.desconto > 0) {
-          total = total * (1 - comboAtivo.desconto / 100);
-        }
       }
+
+      const valorCombo = Number(combo.preco);
+      if (Number.isFinite(valorCombo) && valorCombo > 0) {
+        return valorCombo * totalParticipantesGrupo;
+      }
+
+      const totalPacotes = combo.pacoteIds.reduce((subtotal, pacoteId) => {
+        const pacote = pacotesPorId.get(pacoteId);
+        if (!pacote) return subtotal;
+        return subtotal + tiposClientesAtivos.reduce((acc, tipo) => {
+          const quantidade = Number(obterValorMapa(quantidades, tipo) ?? 0);
+          const preco = obterPrecoPorTipo(pacote.precosPorTipo, tipo, pacote);
+          return acc + quantidade * preco;
+        }, 0);
+      }, 0);
+
+      return combo.desconto && combo.desconto > 0
+        ? totalPacotes * (1 - combo.desconto / 100)
+        : totalPacotes;
     }
 
-    return total;
+    if (grupo.tipo === "pacote" && grupo.pacote) {
+      return tiposClientesAtivos.reduce((acc, tipo) => {
+        const quantidade = Number(obterValorMapa(quantidades, tipo) ?? 0);
+        const preco = obterPrecoPorTipo(grupo.pacote?.precosPorTipo, tipo, grupo.pacote);
+        return acc + quantidade * preco;
+      }, 0);
+    }
+
+    return 0;
+  };
+
+  const calcularTotal = () =>
+    gruposParticipacao.reduce(
+      (total, grupo) =>
+        total + calcularTotalGrupo(grupo, participantesPorGrupo[grupo.chave] ?? {}),
+      0
+    );
+
+  const atualizarParticipantesGrupo = (grupoChave: string, tipo: TipoCliente, delta: number) => {
+    const chaveTipo = obterChaveTipo(tipo);
+    setParticipantesPorGrupo((prev) => {
+      const grupoAtual = prev[grupoChave] ?? {};
+      const valorAtual = Number(obterValorMapa(grupoAtual, tipo) ?? 0);
+      return {
+        ...prev,
+        [grupoChave]: {
+          ...grupoAtual,
+          [chaveTipo]: Math.max(0, valorAtual + delta),
+        },
+      };
+    });
+    setFieldError("participantes");
   };
 
   const hasDisponibilidadeNoDia = (day: Date) => {
@@ -1665,27 +1893,24 @@ export function BookingSection() {
         errors.participantes = "Informe a quantidade de participantes.";
       }
 
-      const limiteAtual =
-        typeof limiteParticipantesAtual === "number"
-          ? Math.max(limiteParticipantesAtual, 0)
-          : null;
-      if (limiteAtual !== null && totalParticipantes > limiteAtual) {
-        const limiteHorario =
-          typeof limiteHorarioSelecionado === "number"
-            ? Math.max(limiteHorarioSelecionado, 0)
-            : null;
-        const limiteFaixa =
-          typeof vagasRestantesFaixaDia === "number"
-            ? Math.max(vagasRestantesFaixaDia, 0)
-            : null;
+      const pacoteSemParticipante = selectedPacotes.find((pacote) => {
+        if (!pacote.id) return false;
+        return (participantesPorPacoteAtual[pacote.id] ?? 0) <= 0;
+      });
+      if (pacoteSemParticipante?.id) {
+        errors.participantes = `Informe quem vai participar de ${pacoteSemParticipante.nome} ou remova este pacote.`;
+      }
 
-        if (limiteHorario !== null && totalParticipantes > limiteHorario) {
-          errors.participantes = `Restam apenas ${limiteHorario} vaga(s) para este horário.`;
-        } else if (limiteFaixa !== null) {
-          errors.participantes = `Restam apenas ${limiteFaixa} vaga(s) disponíveis para esta data.`;
-        } else {
-          errors.participantes = `Restam apenas ${limiteAtual} vaga(s) disponíveis.`;
-        }
+      const pacoteSemVaga = selectedPacotes.find((pacote) => {
+        if (!pacote.id) return false;
+        const restante = vagasRestantesPorPacoteAtual[pacote.id];
+        if (typeof restante !== "number") return false;
+        const participantesDoPacote = participantesPorPacoteAtual[pacote.id] ?? 0;
+        return participantesDoPacote > Math.max(restante, 0);
+      });
+      if (pacoteSemVaga?.id) {
+        const restante = Math.max(vagasRestantesPorPacoteAtual[pacoteSemVaga.id] ?? 0, 0);
+        errors.participantes = `Restam apenas ${restante} vaga(s) para ${pacoteSemVaga.nome}.`;
       }
 
       if (temPet === null) {
@@ -1923,15 +2148,26 @@ export function BookingSection() {
           : "Sem horário específico";
 
       const atividades = selectedPacotes.map(p => p.nome).join(" + ");
-      const comboInfo = comboAtivo
-        ? hasCustomComboPricing(comboAtivo)
-          ? ` (Combo: ${comboAtivo.nome} - ${describeComboValores(comboAtivo)})`
-          : comboAtivo.preco && comboAtivo.preco > 0
-            ? ` (Combo: ${comboAtivo.nome} - valor especial ${formatCurrency(comboAtivo.preco)} por pessoa)`
-            : comboAtivo.desconto && comboAtivo.desconto > 0
-              ? ` (Combo: ${comboAtivo.nome} - ${comboAtivo.desconto}% de desconto)`
-              : ` (Combo: ${comboAtivo.nome})`
-        : "";
+      const grupoComboPrincipal = gruposParticipacaoPayload.find((grupo) => grupo.tipo === "combo");
+      const nomesCombosSelecionados = gruposParticipacaoPayload
+        .filter((grupo) => grupo.tipo === "combo")
+        .map((grupo) => grupo.nome)
+        .join(", ");
+      const comboAtivoComParticipantes =
+        grupoComboPrincipal && comboAtivo?.id === grupoComboPrincipal.refId
+          ? comboAtivo
+          : undefined;
+      const comboInfo = comboAtivoComParticipantes
+        ? hasCustomComboPricing(comboAtivoComParticipantes)
+          ? ` (Combo: ${comboAtivoComParticipantes.nome} - ${describeComboValores(comboAtivoComParticipantes)})`
+          : comboAtivoComParticipantes.preco && comboAtivoComParticipantes.preco > 0
+            ? ` (Combo: ${comboAtivoComParticipantes.nome} - valor especial ${formatCurrency(comboAtivoComParticipantes.preco)} por pessoa)`
+            : comboAtivoComParticipantes.desconto && comboAtivoComParticipantes.desconto > 0
+              ? ` (Combo: ${comboAtivoComParticipantes.nome} - ${comboAtivoComParticipantes.desconto}% de desconto)`
+              : ` (Combo: ${comboAtivoComParticipantes.nome})`
+        : nomesCombosSelecionados
+          ? ` (Combo: ${nomesCombosSelecionados})`
+          : "";
 
       const adultos = obterValorPorTipoNome(participantesPorTipo, tiposClientesAtivos, "adult") ?? 0;
       const criancas = obterValorPorTipoNome(participantesPorTipo, tiposClientesAtivos, "crian") ?? 0;
@@ -1948,6 +2184,7 @@ export function BookingSection() {
         data: dataStr,
         participantes: totalParticipantes,
         participantesPorTipo,
+        gruposParticipacao: gruposParticipacaoPayload,
         adultos,
         bariatrica,
         criancas,
@@ -1957,7 +2194,7 @@ export function BookingSection() {
         horariosPorPacote,
         temPet,
         pacoteIds: selectedPackages,
-        comboId: comboAtivo?.id || null,
+        comboId: grupoComboPrincipal?.refId || null,
       };
 
       if (formaPagamento === "CREDIT_CARD" && cartaoExpiracao) {
@@ -2698,55 +2935,125 @@ export function BookingSection() {
                   <>
 
             <div ref={participantesRef} className="mb-6">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">
-                Quantas pessoas <span className="text-red-500">*</span>
-              </label>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {tiposClientesAtivos.map((tipo) => {
-                  const chave = obterChaveTipo(tipo);
-                  const valor = Number(obterValorMapa(participantesPorTipo, tipo) ?? 0);
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Quem vai participar <span className="text-red-500">*</span>
+                  </label>
+                  <p className="mt-1 text-sm text-slate-500">
+                    Separe quem faz o combo completo de quem participa somente de um pacote.
+                  </p>
+                </div>
+                {totalParticipantesSelecionados > 0 && (
+                  <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-2 text-left sm:text-right">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                      Total
+                    </p>
+                    <p className="text-sm font-bold text-[#8B4F23]">
+                      {totalParticipantesSelecionados} pessoa(s) · {formatCurrency(calcularTotal())}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-4">
+                {gruposParticipacao.map((grupo) => {
+                  const quantidadesGrupo = participantesPorGrupo[grupo.chave] ?? {};
+                  const totalGrupo = somarMapa(quantidadesGrupo);
+                  const subtotalGrupo = calcularTotalGrupo(grupo, quantidadesGrupo);
+                  const vagasGrupo = grupo.pacoteIds
+                    .map((pacoteId) => {
+                      const restante = vagasRestantesPorPacoteAtual[pacoteId];
+                      if (typeof restante !== "number") return null;
+                      const pacoteNome = pacotesPorId.get(pacoteId)?.nome ?? "Pacote";
+                      const ocupadasNestaReserva = participantesPorPacoteAtual[pacoteId] ?? 0;
+                      return `${pacoteNome}: ${Math.max(restante - ocupadasNestaReserva, 0)} vaga(s) livres`;
+                    })
+                    .filter((texto): texto is string => Boolean(texto));
+
                   return (
                     <div
-                      key={chave}
-                      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                      key={grupo.chave}
+                      className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
                     >
-                      <p className="text-sm font-semibold text-slate-700">{tipo.nome}</p>
-                      {tipo.descricao && (
-                        <p className="text-xs text-slate-500 mt-0.5">{tipo.descricao}</p>
-                      )}
-                      <div className="mt-3 flex items-center justify-between gap-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setParticipantesPorTipo((prev) => ({ ...prev, [chave]: Math.max(0, Number(prev[chave] ?? 0) - 1) }));
-                            setFieldError("participantes");
-                          }}
-                          disabled={valor <= 0}
-                          className="w-10 h-10 rounded-lg border border-slate-300 bg-white text-xl font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
-                          aria-label={`Diminuir ${tipo.nome}`}
-                        >−</button>
-                        <span className="min-w-[40px] text-center text-2xl font-bold text-slate-800 tabular-nums">{valor}</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setParticipantesPorTipo((prev) => ({ ...prev, [chave]: Number(prev[chave] ?? 0) + 1 }));
-                            setFieldError("participantes");
-                          }}
-                          className="w-10 h-10 rounded-lg border border-slate-300 bg-white text-xl font-semibold text-slate-700 hover:bg-slate-50"
-                          aria-label={`Aumentar ${tipo.nome}`}
-                        >+</button>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h4 className="text-base font-bold text-slate-800">
+                              {grupo.nome}
+                            </h4>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${
+                                grupo.tipo === "combo"
+                                  ? "bg-[#8B4F23]/10 text-[#8B4F23]"
+                                  : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              {grupo.tipo === "combo" ? "Combo" : "Individual"}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-sm text-slate-500">{grupo.descricao}</p>
+                          {vagasGrupo.length > 0 && (
+                            <p className="mt-2 text-xs font-medium text-slate-500">
+                              {vagasGrupo.join(" · ")}
+                            </p>
+                          )}
+                        </div>
+                        {totalGrupo > 0 && (
+                          <div className="shrink-0 rounded-xl bg-slate-50 px-3 py-2 text-left sm:text-right">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                              Subtotal
+                            </p>
+                            <p className="text-sm font-bold text-slate-800">
+                              {totalGrupo} pessoa(s) · {formatCurrency(subtotalGrupo)}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                        {tiposClientesAtivos.map((tipo) => {
+                          const chave = obterChaveTipo(tipo);
+                          const valor = Number(obterValorMapa(quantidadesGrupo, tipo) ?? 0);
+                          return (
+                            <div
+                              key={`${grupo.chave}-${chave}`}
+                              className="rounded-xl border border-slate-200 bg-slate-50/70 p-3"
+                            >
+                              <p className="text-sm font-semibold text-slate-700">{tipo.nome}</p>
+                              {tipo.descricao && (
+                                <p className="mt-0.5 text-xs text-slate-500">{tipo.descricao}</p>
+                              )}
+                              <div className="mt-3 flex items-center justify-between gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => atualizarParticipantesGrupo(grupo.chave, tipo, -1)}
+                                  disabled={valor <= 0}
+                                  className="h-10 w-10 rounded-lg border border-slate-300 bg-white text-xl font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                  aria-label={`Diminuir ${tipo.nome} em ${grupo.nome}`}
+                                >
+                                  -
+                                </button>
+                                <span className="min-w-[40px] text-center text-2xl font-bold tabular-nums text-slate-800">
+                                  {valor}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => atualizarParticipantesGrupo(grupo.chave, tipo, 1)}
+                                  className="h-10 w-10 rounded-lg border border-slate-300 bg-white text-xl font-semibold text-slate-700 hover:bg-slate-50"
+                                  aria-label={`Aumentar ${tipo.nome} em ${grupo.nome}`}
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   );
                 })}
               </div>
-
-              {totalParticipantesSelecionados > 0 && (
-                <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3 flex items-center justify-between">
-                  <span className="text-sm font-medium text-emerald-800">{totalParticipantesSelecionados} pessoa(s)</span>
-                  <span className="text-base font-bold text-[#8B4F23]">{formatCurrency(calcularTotal())}</span>
-                </div>
-              )}
 
               {formErrors.participantes && (
                 <p className="mt-2 text-sm text-red-600">{formErrors.participantes}</p>
