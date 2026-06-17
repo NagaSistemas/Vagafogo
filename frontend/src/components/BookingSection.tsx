@@ -1498,7 +1498,12 @@ export function BookingSection() {
   };
 
   const hasDisponibilidadeNoDia = (day: Date) => {
-    if (selectedPacotes.length === 0) return false;
+    // Na etapa Data (etapa 0) o cliente ainda nao escolheu pacotes,
+    // entao avaliamos contra TODOS os pacotes (uniao). Se ja escolheu,
+    // restringimos aos selecionados.
+    const pacotesParaAvaliar = selectedPacotes.length > 0 ? selectedPacotes : pacotes;
+    if (pacotesParaAvaliar.length === 0) return false;
+
     const dayStr = day.toISOString().slice(0, 10);
     if (diasBloqueados.has(dayStr)) return false;
 
@@ -1510,7 +1515,7 @@ export function BookingSection() {
       day.getDate() === hoje.getDate();
     const minutosAgora = ehHoje ? hoje.getHours() * 60 + hoje.getMinutes() : -1;
 
-    return selectedPacotes.some((pacote) => {
+    return pacotesParaAvaliar.some((pacote) => {
       if (pacote.dias && pacote.dias.length > 0 && !pacote.dias.includes(diaSemana)) return false;
       const datasBloqueadas = pacote.datasBloqueadas ?? [];
       if (datasBloqueadas.includes(dayStr)) return false;
@@ -1533,10 +1538,11 @@ export function BookingSection() {
   };
 
   const isBlockedDay = (day: Date) => {
-    if (selectedPacotes.length === 0) return false;
+    const pacotesParaAvaliar = selectedPacotes.length > 0 ? selectedPacotes : pacotes;
+    if (pacotesParaAvaliar.length === 0) return false;
     const dayStr = day.toISOString().slice(0, 10);
     if (diasBloqueados.has(dayStr)) return true;
-    return selectedPacotes.every((pacote) =>
+    return pacotesParaAvaliar.every((pacote) =>
       (pacote.datasBloqueadas ?? []).includes(dayStr)
     );
   };
