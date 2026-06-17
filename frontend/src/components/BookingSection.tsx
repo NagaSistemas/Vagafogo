@@ -2944,7 +2944,7 @@ export function BookingSection() {
               <form
                 onSubmit={handleSubmit}
                 noValidate
-                className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-[#FAF7F2] p-4 shadow-2xl shadow-[#8B4F23]/5 sm:p-7 md:p-8 relative overflow-hidden"
+                className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-[#FAF7F2] p-4 shadow-2xl shadow-[#8B4F23]/5 sm:p-7 md:p-8 relative overflow-hidden flex flex-col min-h-[calc(100svh-180px)] lg:min-h-0"
               >
                 <div className="mb-6 sm:mb-8">
                   {/* Stepper bolinhas conectadas — sempre visível */}
@@ -3015,6 +3015,9 @@ export function BookingSection() {
                     )}
                   </div>
                 </div>
+
+                {/* Wrapper de conteúdo — flex-1 com scroll interno no mobile */}
+                <div className="flex-1 overflow-y-auto -mx-4 px-4 sm:mx-0 sm:px-0 lg:overflow-visible lg:flex-none">
 
                 {/* ============ ETAPA 1 — DATA ============ */}
                 {etapa === 1 && (
@@ -4072,7 +4075,9 @@ export function BookingSection() {
 
                 {etapa === 4 && <div className="mb-6 lg:hidden">{resumoCardMobile}</div>}
 
-                <div className="mt-6 sm:mt-10 border-t border-slate-200 pt-5 sm:pt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                </div>{/* fim do wrapper de conteúdo scrollável */}
+
+                <div className="sticky bottom-0 -mx-4 px-4 pt-4 pb-2 sm:pb-0 sm:pt-6 mt-auto sm:mt-10 bg-gradient-to-t from-white via-white/95 to-white/0 border-t border-slate-200 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between sm:relative sm:mx-0 sm:px-0 sm:bg-transparent">
                   <button
                     type="button"
                     onClick={handleVoltarEtapa}
