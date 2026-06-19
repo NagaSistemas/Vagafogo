@@ -614,6 +614,7 @@ function PetStatusIndicator({ hasPet, compact = false }: PetStatusIndicatorProps
         <FaPaw className="admin-pet-indicator__icon" />
         {!hasPet && <span className="admin-pet-indicator__slash" />}
       </span>
+      {!compact && <span className="admin-pet-indicator__label">{label}</span>}
     </span>
   );
 }
@@ -10143,38 +10144,24 @@ const totalParticipantesDoDia = useMemo(() => {
 
                       return (
 
-                        <div key={horario} className="space-y-3">
+                        <div key={horario} className="admin-reserva-slot">
 
-                          <div className="admin-reservas-mobile-group">
-
-                            <div className="admin-reservas-group__title">
-
-                              <span className="admin-reservas-group__icon">
-
+                          <div className="admin-reserva-slot__header">
+                            <div className="admin-reserva-slot__time">
+                              <span className="admin-reserva-slot__icon">
                                 <FaClock className="h-4 w-4" />
-
                               </span>
-
-                              <div className="admin-reservas-group__title-copy">
-
-                                <span className="admin-reservas-group__eyebrow">Horario</span>
-
-                                <p className="admin-reservas-group__time">{tituloHorario}</p>
-
+                              <div>
+                                <span>Horario</span>
+                                <strong>{tituloHorario}</strong>
                               </div>
-
                             </div>
 
-                            <div className="admin-reservas-group__meta">
-
-                              <ReservaHorarioResumo
-                                participantes={totalPessoas}
-                                reservas={totalReservasHorario}
-                                chegadas={totalChegadasHorario}
-                              />
-
+                            <div className="admin-reserva-slot__totals" aria-label="Resumo do horario">
+                              <span><strong>{totalPessoas}</strong> pessoas</span>
+                              <span><strong>{totalReservasHorario}</strong> reservas</span>
+                              <span><strong>{totalChegadasHorario}</strong> chegadas</span>
                             </div>
-
                           </div>
 
                           <div className="admin-reservas-cards-grid">
@@ -10287,7 +10274,7 @@ const totalParticipantesDoDia = useMemo(() => {
 
                                     <div className={`admin-reservas-box admin-reservas-box--pet ${reserva.temPet ? 'is-active' : ''}`}>
                                       <div className="admin-reservas-box__stack admin-reservas-box__stack--pet">
-                                        <PetStatusIndicator hasPet={reserva.temPet === true} compact />
+                                        <PetStatusIndicator hasPet={reserva.temPet === true} />
                                       </div>
                                     </div>
 
