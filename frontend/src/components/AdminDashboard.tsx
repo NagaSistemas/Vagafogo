@@ -8765,10 +8765,6 @@ const totalParticipantesDoDia = useMemo(() => {
                 <span><FaClipboardList className="h-3.5 w-3.5" />Manual</span>
                 <strong>{reservasAgendaResumo.totalManuais.toLocaleString('pt-BR')}</strong>
               </div>
-              <div className="admin-reservas-overview__metric">
-                <span><FaMoneyBillWave className="h-3.5 w-3.5" />Faturamento</span>
-                <strong>{formatarValor(reservasAgendaResumo.faturamento)}</strong>
-              </div>
             </div>
           </div>
 
