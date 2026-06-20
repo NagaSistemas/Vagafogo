@@ -677,6 +677,56 @@ function ReservaPerguntasResumo({
   );
 }
 
+function ReservaRespostasDetalhes({
+  perguntas,
+  className = '',
+}: {
+  perguntas: PerguntaPersonalizadaResposta[];
+  className?: string;
+}) {
+  const totalRespostas = perguntas.reduce(
+    (total, pergunta) =>
+      total + 1 + (pergunta.perguntaCondicional?.resposta?.trim() ? 1 : 0),
+    0
+  );
+
+  return (
+    <details className={`admin-resumo-respostas ${className}`.trim()}>
+      <summary>
+        <span>
+          <FaQuestionCircle className="h-3 w-3" />
+          Ver respostas ({totalRespostas})
+        </span>
+        <FaChevronDown className="admin-resumo-respostas__chevron h-3 w-3" />
+      </summary>
+
+      <div className="admin-resumo-respostas__content">
+        {perguntas.map((pergunta, index) => (
+          <div
+            key={`${pergunta.perguntaId}-${pergunta.pergunta}-${index}`}
+            className="admin-resumo-respostas__item"
+          >
+            <p className="admin-resumo-respostas__question">{pergunta.pergunta}</p>
+            <p className="admin-resumo-respostas__answer">{pergunta.resposta}</p>
+
+            {pergunta.perguntaCondicional?.pergunta &&
+              pergunta.perguntaCondicional.resposta?.trim() && (
+                <div className="admin-resumo-respostas__conditional">
+                  <p className="admin-resumo-respostas__question">
+                    {pergunta.perguntaCondicional.pergunta}
+                  </p>
+                  <p className="admin-resumo-respostas__answer">
+                    {pergunta.perguntaCondicional.resposta}
+                  </p>
+                </div>
+              )}
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function ReservaHorarioResumo({
   participantes,
   reservas,
@@ -10086,9 +10136,243 @@ const totalParticipantesDoDia = useMemo(() => {
 
               </div>)}
 
-              {/* Reservation Cards */}
+              {/* Reservation List */}
+              <div className="admin-reservation-list" role="table" aria-label="Lista de reservas">
+                <div className="admin-reservation-list__head" role="row">
+                  <span role="columnheader">Horario</span>
+                  <span role="columnheader">Cliente</span>
+                  <span role="columnheader">Participantes</span>
+                  <span role="columnheader">Pacote</span>
+                  <span role="columnheader">Respostas</span>
+                  <span role="columnheader">Pet</span>
+                  <span role="columnheader">Valor</span>
+                  <span role="columnheader">Status</span>
+                  <span role="columnheader">Acoes</span>
+                </div>
 
-              <div className="admin-reservas-card-board space-y-5">
+                {reservasAgendaResumo.totalReservas === 0 ? (
+                  <div className="admin-reservas-empty-state">
+                    Nenhuma reserva encontrada para esta data e filtros.
+                  </div>
+                ) : (
+                  <div className="admin-reservation-list__body" role="rowgroup">
+                    {reservasAgendaResumo.grupos.flatMap((grupo) =>
+                      grupo.reservas.map((reserva) => {
+                        const participantes = calcularParticipantes(reserva);
+                        const resumoParticipantes = montarResumoParticipantes(reserva);
+                        const confirmada = statusEhConfirmado(reserva);
+                        const statusBadge = obterBadgeStatus(reserva);
+                        const chegou = reserva.chegou === true;
+                        const reservaToneClass = chegou
+                          ? 'admin-reservas-tone--arrived'
+                          : confirmada
+                            ? 'admin-reservas-tone--confirmed'
+                            : statusEhPreReserva(reserva)
+                              ? 'admin-reservas-tone--pre'
+                              : 'admin-reservas-tone--default';
+                        const pacoteDescricao = formatarPacote(reserva);
+                        const pacotesEtiquetas = quebrarPacoteEmEtiquetas(pacoteDescricao);
+                        const valorFormatado = formatarValor(reserva.valor);
+                        const podeEnviarWhatsapp = Boolean(
+                          normalizarTelefoneWhatsapp(reserva.telefone)
+                        );
+                        const reservaManual = reserva.origem === 'manual';
+                        const reservaKey =
+                          reserva.id ??
+                          `${reserva.nome || 'reserva'}-${reserva.cpf || 'cpf'}-${reserva.horario}-${normalizarDataReserva(reserva.data)}`;
+                        const perguntasRespondidas = obterPerguntasComResposta(reserva);
+                        const mesasDaReserva = Array.isArray(reserva.mesasSelecionadas)
+                          ? reserva.mesasSelecionadas
+                          : [];
+
+                        return (
+                          <article
+                            key={`lista-${reservaKey}`}
+                            className={`admin-reservation-list__row ${reservaToneClass}`}
+                            role="row"
+                          >
+                            <div
+                              className="admin-reservation-list__cell admin-reservation-list__cell--time"
+                              data-label="Horario"
+                              role="cell"
+                            >
+                              <FaClock className="h-3.5 w-3.5" />
+                              <strong>{grupo.tituloHorario}</strong>
+                            </div>
+
+                            <div
+                              className="admin-reservation-list__cell admin-reservation-list__cell--client"
+                              data-label="Cliente"
+                              role="cell"
+                            >
+                              <div className="admin-reservation-list__client-name">
+                                <strong>{reserva.nome || '---'}</strong>
+                                {reservaManual && (
+                                  <span className="admin-reservas-origin-badge">Manual</span>
+                                )}
+                              </div>
+                              <span><FaPhoneAlt className="h-3 w-3" />{reserva.telefone?.trim() || 'Sem telefone'}</span>
+                              <span><FaIdCard className="h-3 w-3" />{formatarCpfExibicao(reserva.cpf)}</span>
+                            </div>
+
+                            <div
+                              className="admin-reservation-list__cell admin-reservation-list__cell--participants"
+                              data-label="Participantes"
+                              role="cell"
+                            >
+                              <strong>{participantes} pessoa{participantes !== 1 ? 's' : ''}</strong>
+                              <div className="admin-reservation-list__inline-tags">
+                                {resumoParticipantes.map((item) => (
+                                  <span key={`${reservaKey}-participante-${item.key}`}>
+                                    {item.label}: {item.quantidade}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+
+                            <div
+                              className="admin-reservation-list__cell admin-reservation-list__cell--package"
+                              data-label="Pacote"
+                              role="cell"
+                            >
+                              <div className="admin-reservation-list__inline-tags">
+                                {pacotesEtiquetas.length > 0 ? (
+                                  pacotesEtiquetas.map((item) => (
+                                    <span key={`${reservaKey}-pacote-${item}`}>{item}</span>
+                                  ))
+                                ) : (
+                                  <span>---</span>
+                                )}
+                              </div>
+                              {mesasDaReserva.length > 0 && (
+                                <span className="admin-reservation-list__secondary">
+                                  <FaChair className="h-3 w-3" />
+                                  {mesasDaReserva.map((mesa) => mesa.nome).join(', ')}
+                                </span>
+                              )}
+                            </div>
+
+                            <div
+                              className="admin-reservation-list__cell admin-reservation-list__cell--answers"
+                              data-label="Respostas"
+                              role="cell"
+                            >
+                              {perguntasRespondidas.length > 0 ? (
+                                <ReservaRespostasDetalhes
+                                  perguntas={perguntasRespondidas}
+                                  className="admin-reservation-list__answers"
+                                />
+                              ) : (
+                                <span className="admin-reservation-list__muted">Sem respostas</span>
+                              )}
+                            </div>
+
+                            <div
+                              className="admin-reservation-list__cell admin-reservation-list__cell--pet"
+                              data-label="Pet"
+                              role="cell"
+                            >
+                              <PetStatusIndicator hasPet={reserva.temPet === true} />
+                            </div>
+
+                            <div
+                              className="admin-reservation-list__cell admin-reservation-list__cell--value"
+                              data-label="Valor"
+                              role="cell"
+                            >
+                              <strong>{valorFormatado}</strong>
+                            </div>
+
+                            <div
+                              className="admin-reservation-list__cell admin-reservation-list__cell--status"
+                              data-label="Status"
+                              role="cell"
+                            >
+                              <span className={`admin-reservation-list__status ${statusBadge.classes}`}>
+                                {statusBadge.label}
+                              </span>
+                              <span className={`admin-reservation-list__arrival ${chegou ? 'is-arrived' : ''}`}>
+                                <FaCheck className="h-3 w-3" />
+                                {chegou ? 'Chegou' : 'Aguardando'}
+                              </span>
+                            </div>
+
+                            <div
+                              className="admin-reservation-list__cell admin-reservation-list__cell--actions"
+                              data-label="Acoes"
+                              role="cell"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => toggleChegadaReserva(reserva)}
+                                className={`admin-reservation-list__action ${chegou ? 'is-active' : ''}`}
+                                aria-label={chegou ? 'Desfazer chegada' : 'Marcar chegada'}
+                                title={chegou ? 'Desfazer chegada' : 'Marcar chegada'}
+                              >
+                                <FaCheck className="h-3.5 w-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  abrirEnvioWhatsapp(
+                                    reserva,
+                                    participantes,
+                                    pacoteDescricao,
+                                    valorFormatado
+                                  )
+                                }
+                                disabled={!podeEnviarWhatsapp}
+                                className="admin-reservation-list__action is-whatsapp"
+                                aria-label="Abrir WhatsApp"
+                                title="WhatsApp"
+                              >
+                                <FaWhatsapp className="h-3.5 w-3.5" />
+                              </button>
+
+                              {reserva.linkPagamento && (
+                                <button
+                                  type="button"
+                                  onClick={() => window.open(reserva.linkPagamento, '_blank')}
+                                  className="admin-reservation-list__action is-payment"
+                                  aria-label="Abrir pagamento"
+                                  title="Pagamento"
+                                >
+                                  <FaCreditCard className="h-3.5 w-3.5" />
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleEditReserva(reserva)}
+                                className="admin-reservation-list__action"
+                                aria-label="Editar reserva"
+                                title="Editar"
+                              >
+                                <FaEdit className="h-3.5 w-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => reserva.id && excluirReserva(reserva.id)}
+                                className="admin-reservation-list__action is-danger"
+                                aria-label="Excluir reserva"
+                                title="Excluir"
+                              >
+                                <FaTrash className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Legacy reservation cards */}
+
+              {false && (<div className="hidden" aria-hidden="true">
 
                 {reservasAgendaResumo.totalReservas === 0 ? (
 
@@ -10437,7 +10721,7 @@ const totalParticipantesDoDia = useMemo(() => {
 
                 )}
 
-              </div>
+              </div>)}
 
               </article>
             </div>
@@ -10539,13 +10823,6 @@ const totalParticipantesDoDia = useMemo(() => {
                                   }
                                   const chegou = r.chegou === true;
                                   const perguntasResumo = obterPerguntasComResposta(r);
-                                  const totalRespostasResumo = perguntasResumo.reduce(
-                                    (total, pergunta) =>
-                                      total +
-                                      1 +
-                                      (pergunta.perguntaCondicional?.resposta?.trim() ? 1 : 0),
-                                    0
-                                  );
                                   return (
                                     <li
                                       key={key}
@@ -10585,39 +10862,7 @@ const totalParticipantesDoDia = useMemo(() => {
                                       </div>
 
                                       {perguntasResumo.length > 0 && (
-                                        <details className="admin-resumo-respostas">
-                                          <summary>
-                                            <span>
-                                              <FaQuestionCircle className="h-3 w-3" />
-                                              Ver respostas ({totalRespostasResumo})
-                                            </span>
-                                            <FaChevronDown className="admin-resumo-respostas__chevron h-3 w-3" />
-                                          </summary>
-
-                                          <div className="admin-resumo-respostas__content">
-                                            {perguntasResumo.map((pergunta) => (
-                                              <div
-                                                key={`${key}-${pergunta.perguntaId}-${pergunta.pergunta}`}
-                                                className="admin-resumo-respostas__item"
-                                              >
-                                                <p className="admin-resumo-respostas__question">{pergunta.pergunta}</p>
-                                                <p className="admin-resumo-respostas__answer">{pergunta.resposta}</p>
-
-                                                {pergunta.perguntaCondicional?.pergunta &&
-                                                  pergunta.perguntaCondicional.resposta?.trim() && (
-                                                    <div className="admin-resumo-respostas__conditional">
-                                                      <p className="admin-resumo-respostas__question">
-                                                        {pergunta.perguntaCondicional.pergunta}
-                                                      </p>
-                                                      <p className="admin-resumo-respostas__answer">
-                                                        {pergunta.perguntaCondicional.resposta}
-                                                      </p>
-                                                    </div>
-                                                  )}
-                                              </div>
-                                            ))}
-                                          </div>
-                                        </details>
+                                        <ReservaRespostasDetalhes perguntas={perguntasResumo} />
                                       )}
                                     </li>
                                   );
