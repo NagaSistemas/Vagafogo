@@ -10538,41 +10538,87 @@ const totalParticipantesDoDia = useMemo(() => {
                                     if (Number(r.bariatrica) > 0) tipos.push(`B:${r.bariatrica}`);
                                   }
                                   const chegou = r.chegou === true;
+                                  const perguntasResumo = obterPerguntasComResposta(r);
+                                  const totalRespostasResumo = perguntasResumo.reduce(
+                                    (total, pergunta) =>
+                                      total +
+                                      1 +
+                                      (pergunta.perguntaCondicional?.resposta?.trim() ? 1 : 0),
+                                    0
+                                  );
                                   return (
                                     <li
                                       key={key}
-                                      className={`flex items-center gap-2 px-3 py-2 transition-colors ${
+                                      className={`admin-resumo-reserva-item px-3 py-2 transition-colors ${
                                         chegou ? 'bg-emerald-50' : 'bg-rose-50/60'
                                       }`}
                                     >
-                                      {/* Avatar */}
-                                      <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                                        chegou ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-500'
-                                      }`}>
-                                        {(r.nome || '?').charAt(0).toUpperCase()}
-                                      </span>
+                                      <div className="flex items-center gap-2">
+                                        {/* Avatar */}
+                                        <span className={`flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                                          chegou ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-500'
+                                        }`}>
+                                          {(r.nome || '?').charAt(0).toUpperCase()}
+                                        </span>
 
-                                      {/* Info */}
-                                      <div className="min-w-0 flex-1">
-                                        <p className="truncate text-xs font-semibold text-slate-800">{r.nome || '---'}</p>
-                                        {tipos.length > 0 && (
-                                          <p className="mt-0.5 text-[10px] font-medium text-slate-400">{tipos.join(' · ')}</p>
-                                        )}
+                                        {/* Info */}
+                                        <div className="min-w-0 flex-1">
+                                          <p className="truncate text-xs font-semibold text-slate-800">{r.nome || '---'}</p>
+                                          {tipos.length > 0 && (
+                                            <p className="mt-0.5 text-[10px] font-medium text-slate-400">{tipos.join(' · ')}</p>
+                                          )}
+                                        </div>
+
+                                        {/* Botão chegada */}
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleChegadaReserva(r)}
+                                          title={chegou ? 'Desfazer chegada' : 'Marcar chegada'}
+                                          className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border transition-colors ${
+                                            chegou
+                                              ? 'border-emerald-400 bg-emerald-500 text-white hover:bg-emerald-600'
+                                              : 'border-slate-300 bg-white text-slate-300 hover:border-emerald-400 hover:text-emerald-500'
+                                          }`}
+                                        >
+                                          <FaCheck className="h-2.5 w-2.5" />
+                                        </button>
                                       </div>
 
-                                      {/* Botão chegada */}
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleChegadaReserva(r)}
-                                        title={chegou ? 'Desfazer chegada' : 'Marcar chegada'}
-                                        className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border transition-colors ${
-                                          chegou
-                                            ? 'border-emerald-400 bg-emerald-500 text-white hover:bg-emerald-600'
-                                            : 'border-slate-300 bg-white text-slate-300 hover:border-emerald-400 hover:text-emerald-500'
-                                        }`}
-                                      >
-                                        <FaCheck className="h-2.5 w-2.5" />
-                                      </button>
+                                      {perguntasResumo.length > 0 && (
+                                        <details className="admin-resumo-respostas">
+                                          <summary>
+                                            <span>
+                                              <FaQuestionCircle className="h-3 w-3" />
+                                              Ver respostas ({totalRespostasResumo})
+                                            </span>
+                                            <FaChevronDown className="admin-resumo-respostas__chevron h-3 w-3" />
+                                          </summary>
+
+                                          <div className="admin-resumo-respostas__content">
+                                            {perguntasResumo.map((pergunta) => (
+                                              <div
+                                                key={`${key}-${pergunta.perguntaId}-${pergunta.pergunta}`}
+                                                className="admin-resumo-respostas__item"
+                                              >
+                                                <p className="admin-resumo-respostas__question">{pergunta.pergunta}</p>
+                                                <p className="admin-resumo-respostas__answer">{pergunta.resposta}</p>
+
+                                                {pergunta.perguntaCondicional?.pergunta &&
+                                                  pergunta.perguntaCondicional.resposta?.trim() && (
+                                                    <div className="admin-resumo-respostas__conditional">
+                                                      <p className="admin-resumo-respostas__question">
+                                                        {pergunta.perguntaCondicional.pergunta}
+                                                      </p>
+                                                      <p className="admin-resumo-respostas__answer">
+                                                        {pergunta.perguntaCondicional.resposta}
+                                                      </p>
+                                                    </div>
+                                                  )}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </details>
+                                      )}
                                     </li>
                                   );
                                 })}
