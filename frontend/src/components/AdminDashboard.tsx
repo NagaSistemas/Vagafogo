@@ -3,7 +3,8 @@
 import React from 'react';
 
 import { collection, query, where, getDocs, doc, deleteDoc, updateDoc, addDoc, getDoc, getDocFromServer, setDoc, onSnapshot, writeBatch, deleteField, Timestamp } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { db, storage } from '../../firebase';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import {
   normalizarStatusReserva as normalizarStatus,
   reservaContaParaOcupacao,
@@ -28,7 +29,7 @@ import dayjs from 'dayjs';
 
 import 'dayjs/locale/pt-br';
 
-import { FaChevronLeft, FaChevronRight, FaChevronDown, FaChevronUp, FaTrash, FaEdit, FaPlus, FaSearch, FaCalendarAlt, FaUsers, FaLayerGroup, FaQuestionCircle, FaCheck, FaCreditCard, FaChair, FaEllipsisV, FaChartBar, FaFilePdf, FaEye, FaEyeSlash, FaSun, FaMoon, FaColumns, FaGripLines, FaUserCircle, FaUser, FaGraduationCap, FaPhoneAlt, FaIdCard, FaPaw, FaMoneyBillWave, FaClock, FaClipboardList, FaListUl, FaEnvelope, FaPaperPlane, FaWhatsapp, FaQrcode, FaSyncAlt, FaSignOutAlt, FaCog } from 'react-icons/fa';
+import { FaChevronLeft, FaChevronRight, FaChevronDown, FaChevronUp, FaTrash, FaEdit, FaPlus, FaSearch, FaCalendarAlt, FaUsers, FaLayerGroup, FaQuestionCircle, FaCheck, FaCreditCard, FaChair, FaEllipsisV, FaChartBar, FaFilePdf, FaEye, FaEyeSlash, FaSun, FaMoon, FaColumns, FaGripLines, FaUserCircle, FaUser, FaGraduationCap, FaPhoneAlt, FaIdCard, FaPaw, FaMoneyBillWave, FaClock, FaClipboardList, FaListUl, FaEnvelope, FaPaperPlane, FaWhatsapp, FaQrcode, FaSyncAlt, FaSignOutAlt, FaCog, FaImage } from 'react-icons/fa';
 import logo from '../assets/logo.jpg';
 import './AdminDashboardTheme.css';
 
@@ -274,6 +275,10 @@ interface Pacote {
   tipo: string;
 
   emoji?: string;
+
+  iconeUrl?: string;
+
+  iconeStoragePath?: string;
 
   precoAdulto: number;
 
@@ -684,46 +689,65 @@ function ReservaRespostasDetalhes({
   perguntas: PerguntaPersonalizadaResposta[];
   className?: string;
 }) {
-  const totalRespostas = perguntas.reduce(
-    (total, pergunta) =>
-      total + 1 + (pergunta.perguntaCondicional?.resposta?.trim() ? 1 : 0),
-    0
-  );
+  const normalizarResposta = (resposta?: string) =>
+    (resposta ?? '')
+      .trim()
+      .toLocaleLowerCase('pt-BR')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+
+  const obterEmojiDaResposta = (resposta?: string, emojiSim?: string, emojiNao?: string) => {
+    const respostaNormalizada = normalizarResposta(resposta);
+    if (['sim', 's'].includes(respostaNormalizada)) return emojiSim?.trim() ?? '';
+    if (['nao', 'n'].includes(respostaNormalizada)) return emojiNao?.trim() ?? '';
+    return '';
+  };
+
+  const respostas = perguntas.flatMap((pergunta) => {
+    const principal = {
+      pergunta: pergunta.pergunta,
+      resposta: pergunta.resposta,
+      emoji: obterEmojiDaResposta(pergunta.resposta, pergunta.emojiSim, pergunta.emojiNao),
+    };
+    const condicional = pergunta.perguntaCondicional?.pergunta && pergunta.perguntaCondicional.resposta?.trim()
+      ? [{
+          pergunta: pergunta.perguntaCondicional.pergunta,
+          resposta: pergunta.perguntaCondicional.resposta,
+          emoji: obterEmojiDaResposta(
+            pergunta.perguntaCondicional.resposta,
+            pergunta.perguntaCondicional.emojiSim,
+            pergunta.perguntaCondicional.emojiNao
+          ),
+        }]
+      : [];
+
+    return [principal, ...condicional];
+  });
 
   return (
-    <details className={`admin-resumo-respostas ${className}`.trim()}>
-      <summary>
-        <span>
-          <FaQuestionCircle className="h-3 w-3" />
-          Ver respostas ({totalRespostas})
-        </span>
-        <FaChevronDown className="admin-resumo-respostas__chevron h-3 w-3" />
-      </summary>
-
+    <div className={`admin-resumo-respostas admin-resumo-respostas--inline ${className}`.trim()}>
       <div className="admin-resumo-respostas__content">
-        {perguntas.map((pergunta, index) => (
+        {respostas.map((resposta, index) => (
           <div
-            key={`${pergunta.perguntaId}-${pergunta.pergunta}-${index}`}
+            key={`${resposta.pergunta}-${index}`}
             className="admin-resumo-respostas__item"
           >
-            <p className="admin-resumo-respostas__question">{pergunta.pergunta}</p>
-            <p className="admin-resumo-respostas__answer">{pergunta.resposta}</p>
-
-            {pergunta.perguntaCondicional?.pergunta &&
-              pergunta.perguntaCondicional.resposta?.trim() && (
-                <div className="admin-resumo-respostas__conditional">
-                  <p className="admin-resumo-respostas__question">
-                    {pergunta.perguntaCondicional.pergunta}
-                  </p>
-                  <p className="admin-resumo-respostas__answer">
-                    {pergunta.perguntaCondicional.resposta}
-                  </p>
-                </div>
-              )}
+            <p className="admin-resumo-respostas__question">{resposta.pergunta}</p>
+            <p className="admin-resumo-respostas__answer">
+              {resposta.emoji ? (
+                <span
+                  className="admin-resumo-respostas__emoji"
+                  aria-label={`${resposta.pergunta}: ${resposta.resposta}`}
+                >
+                  {resposta.emoji}
+                </span>
+              ) : null}
+              <span>{resposta.resposta}</span>
+            </p>
           </div>
         ))}
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -1683,6 +1707,14 @@ export default function AdminDashboard() {
   const [editPacote, setEditPacote] = useState<Pacote | null>(null);
 
   const [isEditingPacote, setIsEditingPacote] = useState(false);
+
+  const [salvandoPacote, setSalvandoPacote] = useState(false);
+
+  const [iconePacoteArquivo, setIconePacoteArquivo] = useState<File | null>(null);
+
+  const [iconePacotePreview, setIconePacotePreview] = useState('');
+
+  const [removerIconePacote, setRemoverIconePacote] = useState(false);
 
   const [novaDataBloqueada, setNovaDataBloqueada] = useState('');
 
@@ -2973,6 +3005,48 @@ const totalParticipantesDoDia = useMemo(() => {
         filtroOrigemReserva !== 'todas',
         filtroPerfilReserva !== 'todos',
       ].filter(Boolean).length,
+    [
+      filtroAtividade,
+      filtroChegada,
+      filtroStatusReserva,
+      filtroOrigemReserva,
+      filtroPerfilReserva,
+    ]
+  );
+
+  const filtrosAtivosAgenda = useMemo(
+    () =>
+      [
+        filtroAtividade.trim()
+          ? { key: 'atividade', label: filtroAtividade.trim(), Icon: FaLayerGroup }
+          : null,
+        filtroChegada !== 'todos'
+          ? { key: 'chegada', label: filtroChegada === 'chegou' ? 'Chegou' : 'Não chegou', Icon: FaCheck }
+          : null,
+        filtroStatusReserva !== 'todos'
+          ? {
+              key: 'status',
+              label: filtroStatusReserva === 'confirmadas' ? 'Confirmadas' : 'Pré-reservas',
+              Icon: FaCreditCard,
+            }
+          : null,
+        filtroOrigemReserva !== 'todas'
+          ? {
+              key: 'origem',
+              label: filtroOrigemReserva === 'manual' ? 'Manual' : 'Checkout',
+              Icon: FaClipboardList,
+            }
+          : null,
+        filtroPerfilReserva !== 'todos'
+          ? {
+              key: 'perfil',
+              label: filtroPerfilReserva === 'educativo' ? 'Educativo' : 'Padrão',
+              Icon: FaGraduationCap,
+            }
+          : null,
+      ].filter(
+        (filtro): filtro is NonNullable<typeof filtro> => Boolean(filtro)
+      ),
     [
       filtroAtividade,
       filtroChegada,
@@ -4976,6 +5050,11 @@ const totalParticipantesDoDia = useMemo(() => {
 
         tipo: data.tipo ?? '',
 
+        iconeUrl: typeof data.iconeUrl === 'string' ? data.iconeUrl : '',
+
+        iconeStoragePath:
+          typeof data.iconeStoragePath === 'string' ? data.iconeStoragePath : '',
+
         precoAdulto: Number(data.precoAdulto ?? 0),
 
         precoCrianca: Number(data.precoCrianca ?? 0),
@@ -6039,7 +6118,42 @@ const totalParticipantesDoDia = useMemo(() => {
   };
 
 
-        const handleEditPacote = (pacote: Pacote) => {
+  const handleSelecionarIconePacote = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const arquivo = event.target.files?.[0];
+    if (!arquivo) return;
+
+    if (arquivo.type !== 'image/png') {
+      setFeedback({ type: 'error', message: 'Escolha uma imagem PNG para o ícone do pacote.' });
+      event.target.value = '';
+      return;
+    }
+
+    if (arquivo.size > 2 * 1024 * 1024) {
+      setFeedback({ type: 'error', message: 'O ícone deve ter no máximo 2 MB.' });
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => setIconePacotePreview(typeof reader.result === 'string' ? reader.result : '');
+    reader.readAsDataURL(arquivo);
+    setIconePacoteArquivo(arquivo);
+    setRemoverIconePacote(false);
+  };
+
+  const limparIconePacote = () => {
+    setIconePacoteArquivo(null);
+    setIconePacotePreview('');
+    setRemoverIconePacote(true);
+  };
+
+  const resetarEstadoIconePacote = () => {
+    setIconePacoteArquivo(null);
+    setIconePacotePreview('');
+    setRemoverIconePacote(false);
+  };
+
+  const handleEditPacote = (pacote: Pacote) => {
 
     setEditPacote({
 
@@ -6068,6 +6182,8 @@ const totalParticipantesDoDia = useMemo(() => {
     setNovaDataBloqueada('');
 
     setNovaPergunta({ pergunta: '', tipo: 'sim_nao', obrigatoria: false, emojiSim: '✅', emojiNao: '❌' });
+
+    resetarEstadoIconePacote();
 
     setIsEditingPacote(true);
 
@@ -6124,6 +6240,8 @@ const totalParticipantesDoDia = useMemo(() => {
     setNovaDataBloqueada('');
 
     setNovaPergunta({ pergunta: '', tipo: 'sim_nao', obrigatoria: false, emojiSim: '✅', emojiNao: '❌' });
+
+    resetarEstadoIconePacote();
 
     setIsEditingPacote(false);
 
@@ -6235,18 +6353,58 @@ const totalParticipantesDoDia = useMemo(() => {
 
     try {
 
+      setSalvandoPacote(true);
+
+      const pacoteRef = id ? doc(db, 'pacotes', id) : doc(collection(db, 'pacotes'));
+      const caminhoIconeAnterior = editPacote.iconeStoragePath ?? '';
+      let iconeUrl = removerIconePacote ? '' : editPacote.iconeUrl ?? '';
+      let iconeStoragePath = removerIconePacote ? '' : caminhoIconeAnterior;
+
+      if (iconePacoteArquivo) {
+        const nomeSeguro = iconePacoteArquivo.name
+          .replace(/[^a-zA-Z0-9._-]/g, '-')
+          .replace(/-+/g, '-')
+          .toLowerCase();
+        const caminhoNovo = `pacotes/icones/${pacoteRef.id}/${Date.now()}-${nomeSeguro || 'icone.png'}`;
+        const referenciaIcone = ref(storage, caminhoNovo);
+
+        await uploadBytes(referenciaIcone, iconePacoteArquivo, {
+          contentType: 'image/png',
+          cacheControl: 'public,max-age=31536000,immutable',
+        });
+
+        iconeUrl = await getDownloadURL(referenciaIcone);
+        iconeStoragePath = caminhoNovo;
+      }
+
+      const dadosPacoteComIcone = {
+        ...dadosPacote,
+        iconeUrl,
+        iconeStoragePath,
+      };
+
       if (isEditingPacote && id) {
 
-        await updateDoc(doc(db, 'pacotes', id), dadosPacote);
+        await updateDoc(pacoteRef, dadosPacoteComIcone);
 
         setFeedback({ type: 'success', message: 'Pacote atualizado com sucesso!' });
 
       } else {
 
-        await addDoc(collection(db, 'pacotes'), dadosPacote);
+        await setDoc(pacoteRef, dadosPacoteComIcone);
 
         setFeedback({ type: 'success', message: 'Pacote cadastrado com sucesso!' });
 
+      }
+
+      if (
+        caminhoIconeAnterior &&
+        caminhoIconeAnterior !== iconeStoragePath &&
+        (iconePacoteArquivo || removerIconePacote)
+      ) {
+        void deleteObject(ref(storage, caminhoIconeAnterior)).catch((error) => {
+          console.warn('Não foi possível remover o ícone anterior do pacote:', error);
+        });
       }
 
       setModalPacote(false);
@@ -6255,11 +6413,22 @@ const totalParticipantesDoDia = useMemo(() => {
 
       setNovaDataBloqueada('');
 
+      resetarEstadoIconePacote();
+
       fetchPacotes();
 
-    } catch {
+    } catch (error) {
 
-      setFeedback({ type: 'error', message: 'Erro ao salvar pacote.' });
+      console.error('Erro ao salvar pacote:', error);
+
+      setFeedback({
+        type: 'error',
+        message: 'Não foi possível salvar o pacote. Verifique o ícone PNG e tente novamente.',
+      });
+
+    } finally {
+
+      setSalvandoPacote(false);
 
     }
 
@@ -8671,113 +8840,160 @@ const totalParticipantesDoDia = useMemo(() => {
           />
 
           <div className="admin-reservas-controls-card admin-tab-hero__section-shell admin-tab-hero__section-shell--soft">
-            {totalFiltrosAtivosReservas > 0 && (
-              <div className="admin-reservas-controls-head">
+            <div className="admin-reservas-controls-head">
+              <div className="admin-reservas-controls-intro">
+                <span className="admin-reservas-controls-intro__icon" aria-hidden="true">
+                  <FaSearch className="h-4 w-4" />
+                </span>
+                <div className="admin-reservas-controls-copy">
+                  <span className="admin-reservas-controls-eyebrow">Filtros da agenda</span>
+                  <strong className="admin-reservas-controls-title">
+                    {totalFiltrosAtivosReservas > 0
+                      ? `${totalFiltrosAtivosReservas} filtro${totalFiltrosAtivosReservas !== 1 ? 's' : ''} ativo${totalFiltrosAtivosReservas !== 1 ? 's' : ''}`
+                      : 'Todas as reservas visíveis'}
+                  </strong>
+                </div>
+              </div>
+              <div className="admin-reservas-controls-actions">
                 <button
                   type="button"
-                  onClick={limparFiltrosReservas}
-                  className="admin-reservas-controls-clear"
+                  onClick={() => setMostrarCalendario((prev) => !prev)}
+                  className="admin-tab-action admin-tab-action--secondary admin-reservas-controls-action"
                 >
-                  Limpar filtros
+                  <FaCalendarAlt className="h-3.5 w-3.5" />
+                  <span>{mostrarCalendario ? 'Ocultar calendário' : 'Calendário'}</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setModalResumoDia(true)}
+                  className="admin-tab-action admin-reservas-controls-action"
+                >
+                  <FaListUl className="h-3.5 w-3.5" />
+                  <span>Resumo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleAddReserva}
+                  className="admin-tab-action admin-tab-action--primary admin-reservas-controls-action"
+                >
+                  <FaPlus className="h-3.5 w-3.5" />
+                  <span>Nova reserva</span>
+                </button>
+
+                {totalFiltrosAtivosReservas > 0 && (
+                  <button
+                    type="button"
+                    onClick={limparFiltrosReservas}
+                    className="admin-reservas-controls-clear"
+                  >
+                    Limpar
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {filtrosAtivosAgenda.length > 0 && (
+              <div className="admin-reservas-controls-active" aria-label="Filtros ativos">
+                <span className="admin-reservas-controls-active__label">Ativos agora</span>
+                {filtrosAtivosAgenda.map(({ key, label, Icon }) => (
+                  <span key={key} className="admin-reservas-controls-active__chip">
+                    <Icon className="h-3.5 w-3.5" />
+                    {label}
+                  </span>
+                ))}
               </div>
             )}
 
             <div className="admin-reservas-controls-grid">
-              <button
-                type="button"
-                onClick={() => setMostrarCalendario((prev) => !prev)}
-                className="admin-tab-action admin-tab-action--secondary admin-tab-hero__control-button"
-              >
-                <FaCalendarAlt className="h-4 w-4" />
-                <span>{mostrarCalendario ? 'Recolher calendario' : 'Mostrar calendario'}</span>
-              </button>
-
-              <label className="admin-tab-hero__field">
-                <select
-                  aria-label="Filtrar por atividade"
-                  value={filtroAtividade}
-                  onChange={(e) => setFiltroAtividade(e.target.value)}
-                  className="admin-tab-hero__field-input"
-                >
-                  <option value="">Todas as atividades</option>
-                  {opcoesFiltroAtividade.map((atividade) => (
-                    <option key={atividade} value={atividade}>
-                      {atividade}
-                    </option>
-                  ))}
-                </select>
+              <label className="admin-tab-hero__field admin-reservas-filter">
+                <span className="admin-reservas-filter__label"><FaLayerGroup className="h-3.5 w-3.5" />Atividade</span>
+                <span className="admin-reservas-filter__control">
+                  <FaLayerGroup className="admin-reservas-filter__icon h-4 w-4" />
+                  <select
+                    aria-label="Filtrar por atividade"
+                    value={filtroAtividade}
+                    onChange={(e) => setFiltroAtividade(e.target.value)}
+                    className="admin-tab-hero__field-input"
+                  >
+                    <option value="">Todas as atividades</option>
+                    {opcoesFiltroAtividade.map((atividade) => (
+                      <option key={atividade} value={atividade}>
+                        {atividade}
+                      </option>
+                    ))}
+                  </select>
+                </span>
               </label>
 
-              <label className="admin-tab-hero__field">
-                <select
-                  aria-label="Filtrar por chegada"
-                  value={filtroChegada}
-                  onChange={(e) => setFiltroChegada(e.target.value as 'todos' | 'chegou' | 'nao')}
-                  className="admin-tab-hero__field-input"
-                >
-                  <option value="todos">Todos</option>
-                  <option value="chegou">Chegou</option>
-                  <option value="nao">Nao chegou</option>
-                </select>
+              <label className="admin-tab-hero__field admin-reservas-filter">
+                <span className="admin-reservas-filter__label"><FaCheck className="h-3.5 w-3.5" />Chegada</span>
+                <span className="admin-reservas-filter__control">
+                  <FaCheck className="admin-reservas-filter__icon h-4 w-4" />
+                  <select
+                    aria-label="Filtrar por chegada"
+                    value={filtroChegada}
+                    onChange={(e) => setFiltroChegada(e.target.value as 'todos' | 'chegou' | 'nao')}
+                    className="admin-tab-hero__field-input"
+                  >
+                    <option value="todos">Todas as chegadas</option>
+                    <option value="chegou">Chegou</option>
+                    <option value="nao">Ainda não chegou</option>
+                  </select>
+                </span>
               </label>
 
-              <label className="admin-tab-hero__field">
-                <select
-                  aria-label="Filtrar por status"
-                  value={filtroStatusReserva}
-                  onChange={(e) => setFiltroStatusReserva(e.target.value as 'todos' | 'confirmadas' | 'pre_reservas')}
-                  className="admin-tab-hero__field-input"
-                >
-                  <option value="todos">Todos os status</option>
-                  <option value="confirmadas">Confirmadas</option>
-                  <option value="pre_reservas">Pre-reservas</option>
-                </select>
+              <label className="admin-tab-hero__field admin-reservas-filter">
+                <span className="admin-reservas-filter__label"><FaCreditCard className="h-3.5 w-3.5" />Status</span>
+                <span className="admin-reservas-filter__control">
+                  <FaCreditCard className="admin-reservas-filter__icon h-4 w-4" />
+                  <select
+                    aria-label="Filtrar por status"
+                    value={filtroStatusReserva}
+                    onChange={(e) => setFiltroStatusReserva(e.target.value as 'todos' | 'confirmadas' | 'pre_reservas')}
+                    className="admin-tab-hero__field-input"
+                  >
+                    <option value="todos">Todos os status</option>
+                    <option value="confirmadas">Confirmadas</option>
+                    <option value="pre_reservas">Pré-reservas</option>
+                  </select>
+                </span>
               </label>
 
-              <label className="admin-tab-hero__field">
-                <select
-                  aria-label="Filtrar por origem"
-                  value={filtroOrigemReserva}
-                  onChange={(e) => setFiltroOrigemReserva(e.target.value as OrigemReservaFiltro)}
-                  className="admin-tab-hero__field-input"
-                >
-                  <option value="todas">Todas as reservas</option>
-                  <option value="manual">Reservas manuais</option>
-                  <option value="checkout">Pagas pelo checkout</option>
-                </select>
+              <label className="admin-tab-hero__field admin-reservas-filter">
+                <span className="admin-reservas-filter__label"><FaClipboardList className="h-3.5 w-3.5" />Origem</span>
+                <span className="admin-reservas-filter__control">
+                  <FaClipboardList className="admin-reservas-filter__icon h-4 w-4" />
+                  <select
+                    aria-label="Filtrar por origem"
+                    value={filtroOrigemReserva}
+                    onChange={(e) => setFiltroOrigemReserva(e.target.value as OrigemReservaFiltro)}
+                    className="admin-tab-hero__field-input"
+                  >
+                    <option value="todas">Todas as origens</option>
+                    <option value="manual">Lançadas manualmente</option>
+                    <option value="checkout">Pagas pelo checkout</option>
+                  </select>
+                </span>
               </label>
 
-              <label className="admin-tab-hero__field">
-                <select
-                  aria-label="Filtrar por perfil da reserva"
-                  value={filtroPerfilReserva}
-                  onChange={(e) => setFiltroPerfilReserva(e.target.value as 'todos' | 'educativo' | 'padrao')}
-                  className="admin-tab-hero__field-input"
-                >
-                  <option value="todos">Perfil: todos</option>
-                  <option value="educativo">Educativo</option>
-                  <option value="padrao">Padrao</option>
-                </select>
+              <label className="admin-tab-hero__field admin-reservas-filter">
+                <span className="admin-reservas-filter__label"><FaGraduationCap className="h-3.5 w-3.5" />Perfil</span>
+                <span className="admin-reservas-filter__control">
+                  <FaGraduationCap className="admin-reservas-filter__icon h-4 w-4" />
+                  <select
+                    aria-label="Filtrar por perfil da reserva"
+                    value={filtroPerfilReserva}
+                    onChange={(e) => setFiltroPerfilReserva(e.target.value as 'todos' | 'educativo' | 'padrao')}
+                    className="admin-tab-hero__field-input"
+                  >
+                    <option value="todos">Todos os perfis</option>
+                    <option value="educativo">Educativo</option>
+                    <option value="padrao">Padrão</option>
+                  </select>
+                </span>
               </label>
-
-              <button
-                type="button"
-                onClick={handleAddReserva}
-                className="admin-tab-action admin-tab-action--primary admin-tab-hero__control-button admin-reservas-controls-grid__primary"
-              >
-                <FaPlus className="h-4 w-4" />
-                <span>Reserva manual</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setModalResumoDia(true)}
-                className="admin-tab-action admin-tab-hero__control-button"
-              >
-                <FaListUl className="h-4 w-4" />
-                <span>Ver resumo</span>
-              </button>
             </div>
           </div>
 
@@ -10156,22 +10372,67 @@ const totalParticipantesDoDia = useMemo(() => {
                   </div>
                 ) : (
                   <div className="admin-reservation-list__body" role="rowgroup">
-                    {reservasAgendaResumo.grupos.flatMap((grupo) =>
-                      grupo.reservas.map((reserva) => {
+                    {reservasAgendaResumo.grupos.map((grupo) => (
+                      <section
+                        key={`grupo-horario-${grupo.horario}`}
+                        className="admin-reservation-list__group"
+                        role="rowgroup"
+                        aria-label={`Reservas do horário ${grupo.tituloHorario}`}
+                      >
+                        <header className="admin-reservation-list__group-header">
+                          <div className="admin-reservation-list__group-time">
+                            <span className="admin-reservation-list__group-icon" aria-hidden="true">
+                              <FaClock className="h-4 w-4" />
+                            </span>
+                            <div>
+                              <span>Horário</span>
+                              <strong>{grupo.tituloHorario}</strong>
+                            </div>
+                          </div>
+
+                          <div className="admin-reservation-list__group-metrics" aria-label="Resumo do horário">
+                            <span><FaClipboardList className="h-3.5 w-3.5" />{grupo.totalReservasHorario} reserva{grupo.totalReservasHorario !== 1 ? 's' : ''}</span>
+                            <span><FaUsers className="h-3.5 w-3.5" />{grupo.totalPessoas} pessoa{grupo.totalPessoas !== 1 ? 's' : ''}</span>
+                            <span><FaCheck className="h-3.5 w-3.5" />{grupo.totalChegadasHorario}/{grupo.totalReservasHorario} chegaram</span>
+                            <span className="admin-reservation-list__group-revenue"><FaMoneyBillWave className="h-3.5 w-3.5" />{formatCurrency(grupo.faturamentoHorario)}</span>
+                          </div>
+                        </header>
+
+                        <div className="admin-reservation-list__group-rows">
+                          {[...grupo.reservas]
+                            .sort((a, b) => Number(a.chegou === true) - Number(b.chegou === true))
+                            .map((reserva) => {
                         const participantes = calcularParticipantes(reserva);
                         const resumoParticipantes = montarResumoParticipantes(reserva);
-                        const confirmada = statusEhConfirmado(reserva);
                         const statusBadge = obterBadgeStatus(reserva);
                         const chegou = reserva.chegou === true;
                         const reservaToneClass = chegou
                           ? 'admin-reservas-tone--arrived'
-                          : confirmada
-                            ? 'admin-reservas-tone--confirmed'
-                            : statusEhPreReserva(reserva)
-                              ? 'admin-reservas-tone--pre'
-                              : 'admin-reservas-tone--default';
+                          : 'admin-reservas-tone--pending';
                         const pacoteDescricao = formatarPacote(reserva);
                         const pacotesEtiquetas = quebrarPacoteEmEtiquetas(pacoteDescricao);
+                        const pacotesRelacionados = inferirPacoteIdsReserva(reserva)
+                          .map((pacoteId) => pacotesPorId.get(pacoteId))
+                          .filter((pacote): pacote is Pacote => Boolean(pacote));
+                        const pacotesVisuais = pacotesEtiquetas.map((etiqueta, index) => {
+                          const etiquetaNormalizada = normalizarTexto(
+                            etiqueta.replace(/^combo:\s*/i, '')
+                          );
+                          const pacoteRelacionado =
+                            pacotesRelacionados.find((pacote) => {
+                              const nomeNormalizado = normalizarTexto(pacote.nome);
+                              return (
+                                nomeNormalizado &&
+                                (etiquetaNormalizada.includes(nomeNormalizado) ||
+                                  nomeNormalizado.includes(etiquetaNormalizada))
+                              );
+                            }) ?? pacotesRelacionados[index];
+
+                          return {
+                            etiqueta,
+                            iconeUrl: pacoteRelacionado?.iconeUrl ?? '',
+                          };
+                        });
                         const valorFormatado = formatarValor(reserva.valor);
                         const podeEnviarWhatsapp = Boolean(
                           normalizarTelefoneWhatsapp(reserva.telefone)
@@ -10236,9 +10497,19 @@ const totalParticipantesDoDia = useMemo(() => {
                               role="cell"
                             >
                               <div className="admin-reservation-list__inline-tags">
-                                {pacotesEtiquetas.length > 0 ? (
-                                  pacotesEtiquetas.map((item) => (
-                                    <span key={`${reservaKey}-pacote-${item}`}>{item}</span>
+                                {pacotesVisuais.length > 0 ? (
+                                  pacotesVisuais.map((item) => (
+                                    <span
+                                      key={`${reservaKey}-pacote-${item.etiqueta}`}
+                                      className="admin-reservation-list__package-tag"
+                                    >
+                                      {item.iconeUrl ? (
+                                        <img src={item.iconeUrl} alt="" aria-hidden="true" />
+                                      ) : (
+                                        <FaLayerGroup className="h-3 w-3" aria-hidden="true" />
+                                      )}
+                                      <span>{item.etiqueta}</span>
+                                    </span>
                                   ))
                                 ) : (
                                   <span>---</span>
@@ -10364,8 +10635,10 @@ const totalParticipantesDoDia = useMemo(() => {
                             </div>
                           </article>
                         );
-                      })
-                    )}
+                            })}
+                        </div>
+                      </section>
+                    ))}
                   </div>
                 )}
               </div>
@@ -11896,11 +12169,24 @@ const totalParticipantesDoDia = useMemo(() => {
 
                       <div className="flex items-start justify-between gap-4">
 
-                        <div>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[#8B4F23]/15 bg-[#8B4F23]/5 text-[#8B4F23] shadow-sm">
+                            {pacote.iconeUrl ? (
+                              <img
+                                src={pacote.iconeUrl}
+                                alt=""
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <FaLayerGroup className="h-5 w-5" aria-hidden="true" />
+                            )}
+                          </span>
 
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{pacote.tipo || 'Atividade'}</p>
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{pacote.tipo || 'Atividade'}</p>
 
-                          <h3 className="mt-1 text-lg font-semibold text-slate-900">{pacote.nome}</h3>
+                            <h3 className="mt-1 truncate text-lg font-semibold text-slate-900">{pacote.nome}</h3>
+                          </div>
 
                         </div>
 
@@ -12146,6 +12432,8 @@ const totalParticipantesDoDia = useMemo(() => {
 
                       setNovaDataBloqueada('');
 
+                      resetarEstadoIconePacote();
+
                     }}
 
                     className="rounded-full border border-slate-200 p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
@@ -12191,6 +12479,55 @@ const totalParticipantesDoDia = useMemo(() => {
                     />
 
                   </label>
+
+                  <div className="md:col-span-2 rounded-2xl border border-dashed border-[#8B4F23]/30 bg-[#8B4F23]/[0.035] p-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                      <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[#8B4F23]/15 bg-white text-[#8B4F23] shadow-sm">
+                        {iconePacotePreview || (!removerIconePacote && editPacote.iconeUrl) ? (
+                          <img
+                            src={iconePacotePreview || editPacote.iconeUrl}
+                            alt="Prévia do ícone do pacote"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <FaImage className="h-6 w-6" aria-hidden="true" />
+                        )}
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold normal-case tracking-normal text-slate-800">Ícone do pacote</p>
+                        <p className="mt-1 text-xs font-normal normal-case tracking-normal text-slate-500">
+                          Envie um PNG quadrado para identificar o pacote nas reservas. Máximo de 2 MB.
+                        </p>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#8B4F23] px-3.5 py-2 text-xs font-semibold normal-case tracking-normal text-white shadow-sm transition hover:bg-[#70401c]">
+                            <FaImage className="h-3.5 w-3.5" />
+                            {iconePacotePreview || (!removerIconePacote && editPacote.iconeUrl)
+                              ? 'Trocar PNG'
+                              : 'Adicionar PNG'}
+                            <input
+                              type="file"
+                              accept="image/png"
+                              onChange={handleSelecionarIconePacote}
+                              className="sr-only"
+                            />
+                          </label>
+
+                          {(iconePacotePreview || (!removerIconePacote && editPacote.iconeUrl)) && (
+                            <button
+                              type="button"
+                              onClick={limparIconePacote}
+                              className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white px-3.5 py-2 text-xs font-semibold normal-case tracking-normal text-rose-600 transition hover:bg-rose-50"
+                            >
+                              <FaTrash className="h-3.5 w-3.5" />
+                              Remover
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="md:col-span-2">
 
@@ -12788,6 +13125,8 @@ const totalParticipantesDoDia = useMemo(() => {
 
                       setNovaDataBloqueada('');
 
+                      resetarEstadoIconePacote();
+
                     }}
 
                     className="w-full sm:w-auto rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
@@ -12802,11 +13141,13 @@ const totalParticipantesDoDia = useMemo(() => {
 
                     onClick={handleSavePacote}
 
-                    className="w-full sm:w-auto rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700"
+                    disabled={salvandoPacote}
+
+                    className="w-full sm:w-auto rounded-full bg-blue-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300"
 
                   >
 
-                    Salvar pacote
+                    {salvandoPacote ? 'Salvando...' : 'Salvar pacote'}
 
                   </button>
 

@@ -83,6 +83,8 @@ type Pacote = {
   perguntasPersonalizadas?: PerguntaPersonalizada[];
   /** Aviso exibido na escolha do horário do pacote (ex: "Chegar 15 min antes") */
   aviso?: string;
+  /** URL do ícone do pacote (PNG) salvo no Firebase Storage. */
+  iconeUrl?: string;
 };
 
 type Combo = {
@@ -2931,13 +2933,13 @@ export function BookingSection() {
   return (
     <section id="reservas" className="py-8 pb-16">
       <div className="mx-auto w-full max-w-screen-xl px-4 sm:px-6 lg:px-8">
-        <div className="mx-auto max-w-5xl">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="mx-auto max-w-5xl md:max-w-2xl lg:max-w-5xl">
+          <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start xl:grid-cols-[minmax(0,1fr)_340px]">
             <div>
               <form
                 onSubmit={handleSubmit}
                 noValidate
-                className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-[#FAF7F2] p-4 shadow-2xl shadow-[#8B4F23]/5 sm:p-7 md:p-8 relative overflow-hidden flex flex-col min-h-[calc(100svh-180px)] lg:min-h-0"
+                className="rounded-2xl sm:rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-[#FAF7F2] p-4 shadow-2xl shadow-[#8B4F23]/5 sm:p-7 md:p-8 relative overflow-hidden flex flex-col min-h-[calc(100svh-180px)] md:min-h-[calc(100svh-220px)] lg:min-h-0"
               >
                 <div className="mb-6 sm:mb-8">
                   {/* Stepper bolinhas conectadas — sempre visível */}
@@ -3075,10 +3077,20 @@ export function BookingSection() {
                                   : "border-slate-200 bg-white hover:border-[#8B4F23]/40 hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
                               }`}
                             >
-                              <div className="flex items-center justify-between gap-3">
+                              <div className="flex items-start gap-3">
+                                {pacote.iconeUrl ? (
+                                  <img
+                                    src={pacote.iconeUrl}
+                                    alt=""
+                                    aria-hidden="true"
+                                    loading="lazy"
+                                    className="w-11 h-11 rounded-xl object-cover flex-shrink-0 border border-slate-100 bg-white shadow-sm"
+                                  />
+                                ) : pacote.emoji ? (
+                                  <span className="w-11 h-11 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0 text-2xl">{pacote.emoji}</span>
+                                ) : null}
                                 <div className="flex-1 min-w-0">
-                                  <p className="font-semibold text-[#2D1E0F] flex items-center gap-2">
-                                    {pacote.emoji && <span>{pacote.emoji}</span>}
+                                  <p className="font-semibold text-[#2D1E0F] flex items-center gap-2 flex-wrap">
                                     <span>{pacote.nome}</span>
                                     {indisponivelNoDia && (
                                       <span className="inline-flex items-center rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700">
@@ -3098,7 +3110,7 @@ export function BookingSection() {
                                     })}
                                   </div>
                                 </div>
-                                <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-all ${
+                                <span className={`w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-1 transition-all ${
                                   selecionado ? "border-[#8B4F23] bg-[#8B4F23]" : "border-slate-300 bg-white"
                                 }`}>
                                   {selecionado && (
@@ -3164,14 +3176,26 @@ export function BookingSection() {
                             className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-white to-[#FAF7F2] p-5 shadow-sm hover:shadow-md transition-shadow"
                           >
                             <div className="flex items-start justify-between gap-3 mb-3">
-                              <div>
-                                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#8B4F23]/70">
-                                  Pacote {idxPacote + 1} de {selectedPacotes.length}
-                                </p>
-                                <h3 className="mt-1 text-base font-bold text-[#2D1E0F] flex items-center gap-2">
-                                  <span>{pacote.emoji}</span>
-                                  <span>{pacote.nome}</span>
-                                </h3>
+                              <div className="flex items-start gap-3 flex-1 min-w-0">
+                                {pacote.iconeUrl ? (
+                                  <img
+                                    src={pacote.iconeUrl}
+                                    alt=""
+                                    aria-hidden="true"
+                                    loading="lazy"
+                                    className="w-10 h-10 rounded-lg object-cover flex-shrink-0 border border-slate-100 bg-white shadow-sm mt-0.5"
+                                  />
+                                ) : pacote.emoji ? (
+                                  <span className="w-10 h-10 rounded-lg bg-slate-50 border border-slate-100 flex items-center justify-center flex-shrink-0 text-xl mt-0.5">{pacote.emoji}</span>
+                                ) : null}
+                                <div className="min-w-0">
+                                  <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#8B4F23]/70">
+                                    Pacote {idxPacote + 1} de {selectedPacotes.length}
+                                  </p>
+                                  <h3 className="mt-1 text-base font-bold text-[#2D1E0F]">
+                                    {pacote.nome}
+                                  </h3>
+                                </div>
                               </div>
                               {horarioPacote && (
                                 <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">

@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { collection, getDocs, getFirestore } from "firebase/firestore";
 import { getAuth } from "firebase/auth"; // ADICIONE ESTA LINHA
+import { getStorage } from "firebase/storage";
 
 
 // Config do Firebase
@@ -20,6 +21,7 @@ const app = initializeApp(firebaseConfig);
 // Instância do Firestore para usar no projeto
 export const db = getFirestore(app);
 export const auth = getAuth(app);  // ADICIONE ESTA LINHA
+export const storage = getStorage(app);
 
 export async function testFirebaseConnection() {
   try {
