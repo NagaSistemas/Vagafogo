@@ -4628,6 +4628,32 @@ const totalParticipantesDoDia = useMemo(() => {
     const totalChegadas = grupos.reduce((acc, grupo) => acc + grupo.totalChegadasHorario, 0);
     const faturamento = grupos.reduce((acc, grupo) => acc + grupo.faturamentoHorario, 0);
 
+    // Total de participantes agrupado por pacote (soma em cada pacote da reserva)
+    const totaisPorPacoteMap = new Map<string, { nome: string; total: number }>();
+    reservasFiltradas.forEach((reserva) => {
+      const totalReserva = calcularParticipantes(reserva);
+      if (totalReserva <= 0) return;
+      const idsPacote = inferirPacoteIdsReserva(reserva);
+      if (idsPacote.length === 0) {
+        // Fallback: usa o texto de atividade
+        const chave = (reserva.atividade ?? 'Sem pacote').trim() || 'Sem pacote';
+        const atual = totaisPorPacoteMap.get(chave) ?? { nome: chave, total: 0 };
+        atual.total += totalReserva;
+        totaisPorPacoteMap.set(chave, atual);
+        return;
+      }
+      idsPacote.forEach((pacoteId) => {
+        const pacote = pacotes.find((p) => p.id === pacoteId);
+        const nome = pacote?.nome ?? 'Pacote removido';
+        const atual = totaisPorPacoteMap.get(pacoteId) ?? { nome, total: 0 };
+        atual.total += totalReserva;
+        totaisPorPacoteMap.set(pacoteId, atual);
+      });
+    });
+    const participantesPorPacote = Array.from(totaisPorPacoteMap.values())
+      .filter((item) => item.total > 0)
+      .sort((a, b) => b.total - a.total);
+
     return {
       grupos,
       totalReservas,
@@ -4641,6 +4667,7 @@ const totalParticipantesDoDia = useMemo(() => {
       faturamento,
       gruposTotal: grupos.length,
       primeiroHorario: grupos[0]?.tituloHorario ?? 'Sem horario',
+      participantesPorPacote,
     };
   }, [
     reservas,
@@ -4650,6 +4677,7 @@ const totalParticipantesDoDia = useMemo(() => {
     filtroOrigemReserva,
     filtroPerfilReserva,
     pacotes,
+    inferirPacoteIdsReserva,
   ]);
 
 
@@ -9006,8 +9034,21 @@ const totalParticipantesDoDia = useMemo(() => {
                 <span className="admin-reservas-overview__eyebrow">Resumo filtrado</span>
                 <strong>{reservasAgendaResumo.totalReservas.toLocaleString('pt-BR')} reserva{reservasAgendaResumo.totalReservas !== 1 ? 's' : ''}</strong>
                 <p>
-                  {reservasAgendaResumo.gruposTotal.toLocaleString('pt-BR')} horario{reservasAgendaResumo.gruposTotal !== 1 ? 's' : ''} · {reservasAgendaResumo.totalParticipantes.toLocaleString('pt-BR')} participante{reservasAgendaResumo.totalParticipantes !== 1 ? 's' : ''}
+                  {reservasAgendaResumo.gruposTotal.toLocaleString('pt-BR')} horario{reservasAgendaResumo.gruposTotal !== 1 ? 's' : ''}
                 </p>
+                {reservasAgendaResumo.participantesPorPacote.length > 0 && (
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {reservasAgendaResumo.participantesPorPacote.map((item) => (
+                      <span
+                        key={item.nome}
+                        className="inline-flex items-center gap-1 rounded-full bg-white/70 border border-emerald-200 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-900"
+                      >
+                        <span className="text-emerald-700">{item.total}</span>
+                        <span className="text-emerald-900/80">{item.nome}</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
