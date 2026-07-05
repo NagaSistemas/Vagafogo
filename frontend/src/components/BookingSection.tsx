@@ -57,6 +57,7 @@ type TipoCliente = {
   id?: string;
   nome: string;
   descricao?: string;
+  perguntarIdade?: boolean;
 };
 
 type TipoClienteQuantidade = Record<string, number>;
@@ -118,6 +119,8 @@ type GrupoParticipacaoPayload = {
   pacoteIds: string[];
   participantesPorTipo: TipoClienteQuantidade;
   participantes: number;
+  /** Idades individuais por chave de tipo (só para tipos com perguntarIdade). */
+  idadesPorTipo?: Record<string, number[]>;
 };
 
 type ParticipantesPorGrupo = Record<string, TipoClienteQuantidade>;
@@ -465,6 +468,9 @@ export function BookingSection() {
   const [diasBloqueados, setDiasBloqueados] = useState<Set<string>>(new Set());
   const [diaSelecionadoFechado, setDiaSelecionadoFechado] = useState(false);
   const [participantesPorGrupo, setParticipantesPorGrupo] = useState<ParticipantesPorGrupo>({});
+  // Idades individuais por (chaveGrupo -> chaveTipo -> array de strings, uma por participante).
+  // Só é populado para tipos de cliente com perguntarIdade === true.
+  const [idadesPorGrupoETipo, setIdadesPorGrupoETipo] = useState<Record<string, Record<string, string[]>>>({});
   const [naoPagante] = useState<number>(0);
   const [temPet, setTemPet] = useState<boolean | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
@@ -554,6 +560,7 @@ export function BookingSection() {
     setHorariosPorPacote({});
     setSubEtapaPagamento("metodo");
     setParticipantesPorGrupo({});
+    setIdadesPorGrupoETipo({});
     setSubPassoParticipantes(0);
     setTemPet(null);
     setCheckoutUrl(null);
@@ -800,6 +807,7 @@ export function BookingSection() {
               id: docSnap.id,
               nome: data.nome ?? "",
               descricao: data.descricao ?? "",
+              perguntarIdade: data.perguntarIdade === true,
             } as TipoCliente;
           })
           .filter((tipo) => tipo.nome.trim().length > 0)
@@ -1110,6 +1118,33 @@ export function BookingSection() {
     });
   }, [gruposParticipacao, tiposClientesAtivos]);
 
+  // Mantém arrays de idade coerentes com as quantidades: cresce → adiciona strings vazias;
+  // reduz → trunca. Só aplica para tipos com perguntarIdade === true.
+  useEffect(() => {
+    setIdadesPorGrupoETipo((prev) => {
+      const proximo: Record<string, Record<string, string[]>> = {};
+      gruposParticipacao.forEach((grupo) => {
+        const idadesGrupoAnterior = prev[grupo.chave] ?? {};
+        const idadesGrupo: Record<string, string[]> = {};
+        tiposClientesAtivos.forEach((tipo) => {
+          if (!tipo.perguntarIdade) return;
+          const chaveTipo = obterChaveTipo(tipo);
+          const qtdAtual = Number(participantesPorGrupo[grupo.chave]?.[chaveTipo] ?? 0);
+          const arrAnterior = Array.isArray(idadesGrupoAnterior[chaveTipo])
+            ? idadesGrupoAnterior[chaveTipo]
+            : [];
+          if (qtdAtual <= 0) return;
+          const arrNovo = Array.from({ length: qtdAtual }, (_, i) => arrAnterior[i] ?? "");
+          idadesGrupo[chaveTipo] = arrNovo;
+        });
+        if (Object.keys(idadesGrupo).length > 0) {
+          proximo[grupo.chave] = idadesGrupo;
+        }
+      });
+      return proximo;
+    });
+  }, [gruposParticipacao, tiposClientesAtivos, participantesPorGrupo]);
+
   const participantesPorTipo = useMemo(
     () =>
       somarMapasQuantidade(
@@ -1136,6 +1171,19 @@ export function BookingSection() {
         .map((grupo) => {
           const participantesGrupo = normalizarMapaQuantidade(participantesPorGrupo[grupo.chave]);
           const participantes = somarMapa(participantesGrupo);
+          const idadesGrupo = idadesPorGrupoETipo[grupo.chave] ?? {};
+          const idadesPorTipo: Record<string, number[]> = {};
+          Object.entries(idadesGrupo).forEach(([chaveTipo, arr]) => {
+            const idadesNumericas = arr
+              .map((valor) => {
+                const num = Number(valor);
+                return Number.isFinite(num) && num >= 0 ? Math.floor(num) : null;
+              })
+              .filter((num): num is number => num !== null);
+            if (idadesNumericas.length > 0) {
+              idadesPorTipo[chaveTipo] = idadesNumericas;
+            }
+          });
           return {
             tipo: grupo.tipo,
             refId: grupo.refId,
@@ -1143,10 +1191,11 @@ export function BookingSection() {
             pacoteIds: grupo.pacoteIds,
             participantesPorTipo: participantesGrupo,
             participantes,
+            ...(Object.keys(idadesPorTipo).length > 0 ? { idadesPorTipo } : {}),
           };
         })
         .filter((grupo) => grupo.participantes > 0),
-    [gruposParticipacao, participantesPorGrupo]
+    [gruposParticipacao, participantesPorGrupo, idadesPorGrupoETipo]
   );
 
   const temPacoteFaixa = useMemo(
@@ -3571,6 +3620,8 @@ export function BookingSection() {
                         {tiposClientesAtivos.map((tipo) => {
                           const chave = obterChaveTipo(tipo);
                           const valor = Number(obterValorMapa(quantidadesGrupo, tipo) ?? 0);
+                          const perguntarIdadeAtivo = tipo.perguntarIdade === true && valor > 0;
+                          const idadesDoTipo = idadesPorGrupoETipo[grupo.chave]?.[chave] ?? [];
                           return (
                             <div
                               key={`${grupo.chave}-${chave}`}
@@ -3602,6 +3653,47 @@ export function BookingSection() {
                                   +
                                 </button>
                               </div>
+                              {perguntarIdadeAtivo && (
+                                <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                                    Idade de cada {tipo.nome.toLowerCase()}
+                                  </p>
+                                  <div className="grid grid-cols-2 gap-2">
+                                    {Array.from({ length: valor }, (_, idx) => {
+                                      const idadeValor = idadesDoTipo[idx] ?? "";
+                                      return (
+                                        <label key={`${grupo.chave}-${chave}-idade-${idx}`} className="flex flex-col">
+                                          <span className="text-[10px] font-semibold text-slate-500">
+                                            #{idx + 1}
+                                          </span>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            max={120}
+                                            inputMode="numeric"
+                                            value={idadeValor}
+                                            onChange={(e) => {
+                                              const novoValor = e.target.value;
+                                              setIdadesPorGrupoETipo((prev) => {
+                                                const grupoAtual = { ...(prev[grupo.chave] ?? {}) };
+                                                const arrAtual = Array.isArray(grupoAtual[chave])
+                                                  ? [...grupoAtual[chave]]
+                                                  : Array.from({ length: valor }, () => "");
+                                                while (arrAtual.length < valor) arrAtual.push("");
+                                                arrAtual[idx] = novoValor;
+                                                grupoAtual[chave] = arrAtual;
+                                                return { ...prev, [grupo.chave]: grupoAtual };
+                                              });
+                                            }}
+                                            placeholder="anos"
+                                            className="mt-0.5 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 focus:border-[#8B4F23] focus:outline-none focus:ring-1 focus:ring-[#8B4F23]/40"
+                                          />
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}

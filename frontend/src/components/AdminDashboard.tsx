@@ -482,6 +482,20 @@ interface Reserva {
 
   chegou?: boolean;
 
+  /**
+   * Grupos de participação salvos pelo checkout. Cada grupo pode carregar
+   * idadesPorTipo quando o tipo tem perguntarIdade === true.
+   */
+  gruposParticipacao?: Array<{
+    tipo?: string;
+    refId?: string;
+    nome?: string;
+    pacoteIds?: string[];
+    participantesPorTipo?: Record<string, number>;
+    participantes?: number;
+    idadesPorTipo?: Record<string, number[]>;
+  }>;
+
 }
 
 type OrigemReservaFiltro = 'todas' | 'manual' | 'checkout';
@@ -4446,6 +4460,36 @@ const totalParticipantesDoDia = useMemo(() => {
 
   );
 
+  const extrairIdadesPorLabel = useCallback(
+    (reserva: Reserva) => {
+      const grupos = Array.isArray(reserva.gruposParticipacao) ? reserva.gruposParticipacao : [];
+      if (grupos.length === 0) return [] as Array<{ label: string; idades: number[] }>;
+      const acumulado = new Map<string, { label: string; idades: number[] }>();
+      grupos.forEach((grupo) => {
+        const mapaIdades = grupo?.idadesPorTipo;
+        if (!mapaIdades || typeof mapaIdades !== 'object') return;
+        Object.entries(mapaIdades).forEach(([chaveTipo, arr]) => {
+          if (!Array.isArray(arr) || arr.length === 0) return;
+          const tipo = tiposClientesAtivos.find(
+            (t) => t.id === chaveTipo || normalizarTexto(t.nome) === normalizarTexto(chaveTipo)
+          );
+          const label = tipo?.nome ?? chaveTipo;
+          const idadesValidas = arr
+            .map((n) => Number(n))
+            .filter((n) => Number.isFinite(n) && n >= 0);
+          if (idadesValidas.length === 0) return;
+          const atual = acumulado.get(label) ?? { label, idades: [] };
+          atual.idades = [...atual.idades, ...idadesValidas];
+          acumulado.set(label, atual);
+        });
+      });
+      return Array.from(acumulado.values()).sort((a, b) =>
+        compararTextoNumericamente(a.label, b.label)
+      );
+    },
+    [tiposClientesAtivos]
+  );
+
 
 
   const formatarValor = (valor?: number | string) => {
@@ -5153,6 +5197,8 @@ const totalParticipantesDoDia = useMemo(() => {
             nome: data.nome ?? '',
 
             descricao: data.descricao ?? '',
+
+            perguntarIdade: data.perguntarIdade === true,
 
           } as TipoCliente;
 
@@ -6085,6 +6131,8 @@ const totalParticipantesDoDia = useMemo(() => {
       nome,
 
       ...(descricao ? { descricao } : {}),
+
+      perguntarIdade: editTipoCliente.perguntarIdade === true,
 
     };
 
@@ -10535,6 +10583,23 @@ const totalParticipantesDoDia = useMemo(() => {
                                   </span>
                                 ))}
                               </div>
+                              {(() => {
+                                const idadesResumo = extrairIdadesPorLabel(reserva);
+                                if (idadesResumo.length === 0) return null;
+                                return (
+                                  <div className="admin-reservation-list__inline-tags mt-1">
+                                    {idadesResumo.map((item) => (
+                                      <span
+                                        key={`${reservaKey}-idades-${item.label}`}
+                                        className="admin-reservation-list__age-tag"
+                                        title={`Idades informadas para ${item.label}`}
+                                      >
+                                        {item.label}: {item.idades.join(', ')} anos
+                                      </span>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
                             </div>
 
                             <div
@@ -14240,6 +14305,25 @@ const totalParticipantesDoDia = useMemo(() => {
 
                 </label>
 
+                <label className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 cursor-pointer transition hover:border-blue-300">
+                  <input
+                    type="checkbox"
+                    checked={editTipoCliente.perguntarIdade === true}
+                    onChange={(e) => setEditTipoCliente((prev) => ({ ...prev, perguntarIdade: e.target.checked }))}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <span className="flex-1 text-xs">
+                    <span className="block font-bold uppercase tracking-wider text-slate-700">
+                      Perguntar idade de cada participante?
+                    </span>
+                    <span className="mt-1 block font-normal normal-case tracking-normal text-slate-500 leading-snug">
+                      Ao marcar, o formulário de reserva pedirá a idade individual de cada
+                      participante desse tipo (ex: idade de cada criança). Útil para políticas
+                      etárias e histórico.
+                    </span>
+                  </span>
+                </label>
+
                 <div className="flex flex-col gap-2 sm:flex-row">
 
                   <button
@@ -14348,6 +14432,11 @@ const totalParticipantesDoDia = useMemo(() => {
 
                               <h4 className="text-base font-semibold text-slate-900">{tipo.nome}</h4>
 
+                              {tipo.perguntarIdade && (
+                                <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                                  Pergunta idade
+                                </span>
+                              )}
 
                             </div>
 
