@@ -2956,48 +2956,19 @@ const totalParticipantesDoDia = useMemo(() => {
   }, [pacotes]);
 
   const opcoesFiltroAtividade = useMemo(() => {
-
+    // So mostra pacotes e combos cadastrados no painel (evita duplicacoes
+    // vindas do texto livre em reserva.atividade)
     const nomes = new Set<string>();
-
     pacotes.forEach((pacote) => {
-
-      if (typeof pacote.nome === 'string' && pacote.nome.trim().length > 0) {
-
-        nomes.add(pacote.nome);
-
-      }
-
+      const nome = (pacote.nome ?? '').trim();
+      if (nome) nomes.add(nome);
     });
-
     combos.forEach((combo) => {
-
-      if (typeof combo.nome === 'string' && combo.nome.trim().length > 0) {
-
-        nomes.add(combo.nome);
-
-      }
-
+      const nome = (combo.nome ?? '').trim();
+      if (nome) nomes.add(nome);
     });
-
-    Object.values(reservas).forEach((lista) => {
-
-      lista.forEach((reserva) => {
-
-        const atividade = (reserva.atividade ?? '').split('(')[0]?.trim();
-
-        if (atividade) {
-
-          nomes.add(atividade);
-
-        }
-
-      });
-
-    });
-
-    return Array.from(nomes).filter(Boolean).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-
-  }, [pacotes, combos, reservas]);
+    return Array.from(nomes).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [pacotes, combos]);
 
   const filtroAtividadeNormalizado = filtroAtividade.trim().toLowerCase();
   const totalFiltrosAtivosReservas = useMemo(
@@ -4642,29 +4613,53 @@ const totalParticipantesDoDia = useMemo(() => {
     const totalChegadas = grupos.reduce((acc, grupo) => acc + grupo.totalChegadasHorario, 0);
     const faturamento = grupos.reduce((acc, grupo) => acc + grupo.faturamentoHorario, 0);
 
-    // Total de participantes agrupado por pacote (soma em cada pacote da reserva)
-    const totaisPorPacoteMap = new Map<string, { nome: string; total: number }>();
+    // Agrupa participantes por COMBINACAO de pacotes da reserva:
+    // - Se a combinacao bate com um combo cadastrado (mesmo set de pacoteIds),
+    //   agrupa sob o nome do combo (chave: combo:<id>)
+    // - Senao usa a combinacao literal dos pacotes (chave: pacotes:<ids ordenados>)
+    // Assim quem comprou 'Brunch+Trilha' NAO e contado 2x (uma vez em Brunch,
+    // outra em Trilha), mas separadamente de quem comprou so Brunch.
+    const totaisPorCombinacaoMap = new Map<string, { nome: string; total: number }>();
     reservasFiltradas.forEach((reserva) => {
       const totalReserva = calcularParticipantes(reserva);
       if (totalReserva <= 0) return;
       const idsPacote = inferirPacoteIdsReserva(reserva);
       if (idsPacote.length === 0) {
         // Fallback: usa o texto de atividade
-        const chave = (reserva.atividade ?? 'Sem pacote').trim() || 'Sem pacote';
-        const atual = totaisPorPacoteMap.get(chave) ?? { nome: chave, total: 0 };
+        const chave = `atividade:${((reserva.atividade ?? '').trim() || 'Sem pacote')}`;
+        const nome = ((reserva.atividade ?? '').trim() || 'Sem pacote');
+        const atual = totaisPorCombinacaoMap.get(chave) ?? { nome, total: 0 };
         atual.total += totalReserva;
-        totaisPorPacoteMap.set(chave, atual);
+        totaisPorCombinacaoMap.set(chave, atual);
         return;
       }
-      idsPacote.forEach((pacoteId) => {
-        const pacote = pacotes.find((p) => p.id === pacoteId);
-        const nome = pacote?.nome ?? 'Pacote removido';
-        const atual = totaisPorPacoteMap.get(pacoteId) ?? { nome, total: 0 };
-        atual.total += totalReserva;
-        totaisPorPacoteMap.set(pacoteId, atual);
+      const idsOrdenados = Array.from(new Set(idsPacote)).sort();
+      // Verifica se a combinacao bate com algum combo cadastrado
+      const comboCorrespondente = combos.find((combo) => {
+        const idsCombo = Array.from(new Set((combo.pacoteIds ?? []).map(String))).sort();
+        return idsCombo.length === idsOrdenados.length &&
+          idsCombo.every((id, idx) => id === idsOrdenados[idx]);
       });
+      let chave: string;
+      let nome: string;
+      if (comboCorrespondente) {
+        chave = `combo:${comboCorrespondente.id ?? comboCorrespondente.nome}`;
+        nome = comboCorrespondente.nome;
+      } else if (idsOrdenados.length === 1) {
+        const pacote = pacotes.find((p) => p.id === idsOrdenados[0]);
+        chave = `pacote:${idsOrdenados[0]}`;
+        nome = pacote?.nome ?? 'Pacote removido';
+      } else {
+        chave = `pacotes:${idsOrdenados.join('+')}`;
+        nome = idsOrdenados
+          .map((id) => pacotes.find((p) => p.id === id)?.nome ?? 'Pacote')
+          .join(' + ');
+      }
+      const atual = totaisPorCombinacaoMap.get(chave) ?? { nome, total: 0 };
+      atual.total += totalReserva;
+      totaisPorCombinacaoMap.set(chave, atual);
     });
-    const participantesPorPacote = Array.from(totaisPorPacoteMap.values())
+    const participantesPorPacote = Array.from(totaisPorCombinacaoMap.values())
       .filter((item) => item.total > 0)
       .sort((a, b) => b.total - a.total);
 
@@ -4691,6 +4686,7 @@ const totalParticipantesDoDia = useMemo(() => {
     filtroOrigemReserva,
     filtroPerfilReserva,
     pacotes,
+    combos,
     inferirPacoteIdsReserva,
   ]);
 
