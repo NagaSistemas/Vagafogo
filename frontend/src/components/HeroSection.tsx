@@ -2,10 +2,9 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import heroImg1 from "../assets/hero/hero-1.jpg";
 import heroImg2 from "../assets/hero/hero-2.jpg";
-import heroImg3 from "../assets/hero/hero-3.jpg";
 import { Magnetic } from "./Magnetic";
 
-const heroImages = [heroImg1, heroImg2, heroImg3];
+const heroImages = [heroImg1, heroImg2];
 
 export function HeroSection() {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
