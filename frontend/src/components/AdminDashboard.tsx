@@ -417,6 +417,9 @@ interface TipoCliente {
 
   descricao?: string;
 
+  /** Se true, o formulario de reserva pergunta a idade de cada participante desse tipo. */
+  perguntarIdade?: boolean;
+
 }
 
 interface Reserva {
@@ -1076,6 +1079,8 @@ const criarTipoClienteVazio = (): TipoCliente => ({
   nome: '',
 
   descricao: '',
+
+  perguntarIdade: false,
 
 });
 
@@ -10406,7 +10411,6 @@ const totalParticipantesDoDia = useMemo(() => {
               {/* Reservation List */}
               <div className="admin-reservation-list" role="table" aria-label="Lista de reservas">
                 <div className="admin-reservation-list__head" role="row">
-                  <span role="columnheader">Horario</span>
                   <span role="columnheader">Cliente</span>
                   <span role="columnheader">Participantes</span>
                   <span role="columnheader">Pacote</span>
@@ -10503,15 +10507,6 @@ const totalParticipantesDoDia = useMemo(() => {
                             className={`admin-reservation-list__row ${reservaToneClass}`}
                             role="row"
                           >
-                            <div
-                              className="admin-reservation-list__cell admin-reservation-list__cell--time"
-                              data-label="Horario"
-                              role="cell"
-                            >
-                              <FaClock className="h-3.5 w-3.5" />
-                              <strong>{grupo.tituloHorario}</strong>
-                            </div>
-
                             <div
                               className="admin-reservation-list__cell admin-reservation-list__cell--client"
                               data-label="Cliente"
