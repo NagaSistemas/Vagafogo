@@ -1496,6 +1496,10 @@ export default function AdminDashboard() {
     Record<string, number>
   >({});
 
+  const [participantesReservasCalendario, setParticipantesReservasCalendario] = useState<
+    Record<string, number>
+  >({});
+
   const [reservasDataEmEdicao, setReservasDataEmEdicao] = useState<Reserva[]>([]);
   const [vagasExtrasDisponibilidadeEmEdicao, setVagasExtrasDisponibilidadeEmEdicao] =
     useState<Record<string, number>>({});
@@ -3867,16 +3871,26 @@ const totalParticipantesDoDia = useMemo(() => {
         mapaReservas.set(id, reserva);
       });
 
-      const indicadores = Array.from(mapaReservas.values())
-        .filter((reserva) => reservaEhAtivaNoPainel(reserva))
-        .reduce((acc, reserva) => {
-          const data = normalizarDataReserva(reserva.data);
-          if (!data) return acc;
-          acc[data] = (acc[data] ?? 0) + 1;
-          return acc;
-        }, {} as Record<string, number>);
+      const reservasAtivas = Array.from(mapaReservas.values()).filter((reserva) =>
+        reservaEhAtivaNoPainel(reserva)
+      );
+
+      const indicadores = reservasAtivas.reduce((acc, reserva) => {
+        const data = normalizarDataReserva(reserva.data);
+        if (!data) return acc;
+        acc[data] = (acc[data] ?? 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const participantesPorDia = reservasAtivas.reduce((acc, reserva) => {
+        const data = normalizarDataReserva(reserva.data);
+        if (!data) return acc;
+        acc[data] = (acc[data] ?? 0) + calcularParticipantes(reserva);
+        return acc;
+      }, {} as Record<string, number>);
 
       setIndicadoresReservasCalendario(indicadores);
+      setParticipantesReservasCalendario(participantesPorDia);
     };
 
     const unsubscribeString = onSnapshot(
@@ -9148,6 +9162,9 @@ const totalParticipantesDoDia = useMemo(() => {
                     const totalReservasNoDia = dataCalendario
                       ? indicadoresReservasCalendario[dataCalendario] ?? 0
                       : 0;
+                    const totalParticipantesNoDia = dataCalendario
+                      ? participantesReservasCalendario[dataCalendario] ?? 0
+                      : 0;
                     const temReservasNoDia = totalReservasNoDia > 0;
 
                     const isSelected =
@@ -9171,33 +9188,30 @@ const totalParticipantesDoDia = useMemo(() => {
                           : 'bg-rose-50 text-rose-600 hover:bg-rose-100';
 
                     return (
-
-                      <button
-
-                        key={idx}
-
-                        type="button"
-
-                        disabled={!day}
-
-                        className={`flex h-10 items-center justify-center rounded-full text-xs font-medium transition ${buttonClass}`}
-
-                        title={
-                          !day
-                            ? undefined
-                            : temReservasNoDia
-                              ? `${totalReservasNoDia} reserva(s) neste dia`
-                              : 'Nenhuma reserva neste dia'
-                        }
-
-                        onClick={() => day && setSelectedDate(new Date(currentYear, currentMonth, day))}
-
-                      >
-
-                        {day || ''}
-
-                      </button>
-
+                      <div key={idx} className="flex flex-col items-center gap-0.5">
+                        <button
+                          type="button"
+                          disabled={!day}
+                          className={`flex h-10 w-10 items-center justify-center rounded-full text-xs font-medium transition ${buttonClass}`}
+                          title={
+                            !day
+                              ? undefined
+                              : temReservasNoDia
+                                ? `${totalReservasNoDia} reserva(s) · ${totalParticipantesNoDia} participante(s)`
+                                : 'Nenhuma reserva neste dia'
+                          }
+                          onClick={() => day && setSelectedDate(new Date(currentYear, currentMonth, day))}
+                        >
+                          {day || ''}
+                        </button>
+                        {day && temReservasNoDia && totalParticipantesNoDia > 0 && (
+                          <span className={`text-[9px] font-semibold leading-none tabular-nums ${
+                            isSelected ? 'text-emerald-700' : 'text-slate-400'
+                          }`}>
+                            {totalParticipantesNoDia}
+                          </span>
+                        )}
+                      </div>
                     );
 
                   })}
