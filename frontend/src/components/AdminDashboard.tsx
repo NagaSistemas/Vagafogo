@@ -308,6 +308,8 @@ interface Pacote {
 
   aviso?: string;
 
+  contarNoCalendario?: boolean;
+
 }
 
 
@@ -2154,6 +2156,22 @@ export default function AdminDashboard() {
     [pacotes]
   );
 
+  const reservaContaNoCalendario = useCallback(
+    (reserva: Reserva) => {
+      const ids = inferirPacoteIdsReserva(reserva);
+      if (ids.length === 0) return true;
+
+      const pacotesRelacionados = ids
+        .map((id) => pacotes.find((pacote) => pacote.id === id))
+        .filter((pacote): pacote is Pacote => Boolean(pacote));
+
+      if (pacotesRelacionados.length === 0) return true;
+
+      return pacotesRelacionados.some((pacote) => pacote.contarNoCalendario !== false);
+    },
+    [inferirPacoteIdsReserva, pacotes]
+  );
+
   const pacotesSelecionadosEmEdicao = useMemo(() => {
     if (!editReserva) return [];
     const idsSelecionados = new Set(
@@ -3861,8 +3879,8 @@ const totalParticipantesDoDia = useMemo(() => {
         mapaReservas.set(id, reserva);
       });
 
-      const reservasAtivas = Array.from(mapaReservas.values()).filter((reserva) =>
-        reservaEhAtivaNoPainel(reserva)
+      const reservasAtivas = Array.from(mapaReservas.values()).filter(
+        (reserva) => reservaEhAtivaNoPainel(reserva) && reservaContaNoCalendario(reserva)
       );
 
       const indicadores = reservasAtivas.reduce((acc, reserva) => {
@@ -3913,7 +3931,7 @@ const totalParticipantesDoDia = useMemo(() => {
       unsubscribeString();
       unsubscribeTimestamp();
     };
-  }, [aba, currentMonth, currentYear]);
+  }, [aba, currentMonth, currentYear, reservaContaNoCalendario]);
 
 
 
@@ -4657,10 +4675,21 @@ const totalParticipantesDoDia = useMemo(() => {
       );
 
     const reservasFiltradas = grupos.flatMap((grupo) => grupo.reservas);
-    const totalReservas = reservasFiltradas.length;
-    const totalParticipantes = grupos.reduce((acc, grupo) => acc + grupo.totalPessoas, 0);
-    const totalChegadas = grupos.reduce((acc, grupo) => acc + grupo.totalChegadasHorario, 0);
-    const faturamento = grupos.reduce((acc, grupo) => acc + grupo.faturamentoHorario, 0);
+
+    // Alem dos filtros da agenda, o resumo (numeros) so considera reservas de
+    // pacotes marcados para contar no calendario. A lista de reservas acima
+    // (grupos) continua mostrando tudo, sem esse filtro adicional.
+    const reservasParaResumo = reservasFiltradas.filter(reservaContaNoCalendario);
+    const totalReservas = reservasParaResumo.length;
+    const totalParticipantes = reservasParaResumo.reduce(
+      (acc, reserva) => acc + calcularParticipantes(reserva),
+      0
+    );
+    const totalChegadas = reservasParaResumo.filter((reserva) => reserva.chegou === true).length;
+    const faturamento = reservasParaResumo.reduce((acc, reserva) => {
+      const valor = Number(reserva.valor ?? 0);
+      return acc + (Number.isFinite(valor) ? valor : 0);
+    }, 0);
 
     // Agrupa participantes por COMBINACAO de pacotes da reserva:
     // - Se a combinacao bate com um combo cadastrado (mesmo set de pacoteIds),
@@ -4669,7 +4698,7 @@ const totalParticipantesDoDia = useMemo(() => {
     // Assim quem comprou 'Brunch+Trilha' NAO e contado 2x (uma vez em Brunch,
     // outra em Trilha), mas separadamente de quem comprou so Brunch.
     const totaisPorCombinacaoMap = new Map<string, { nome: string; total: number }>();
-    reservasFiltradas.forEach((reserva) => {
+    reservasParaResumo.forEach((reserva) => {
       const totalReserva = calcularParticipantes(reserva);
       if (totalReserva <= 0) return;
       const idsPacote = inferirPacoteIdsReserva(reserva);
@@ -4718,10 +4747,10 @@ const totalParticipantesDoDia = useMemo(() => {
       totalParticipantes,
       totalChegadas,
       totalPendentes: Math.max(totalReservas - totalChegadas, 0),
-      totalPreReservas: reservasFiltradas.filter((reserva) => statusEhPreReserva(reserva)).length,
-      totalPets: reservasFiltradas.filter((reserva) => reserva.temPet === true).length,
-      totalManuais: reservasFiltradas.filter((reserva) => reserva.origem === 'manual').length,
-      totalCheckout: reservasFiltradas.filter((reserva) => reserva.origem !== 'manual').length,
+      totalPreReservas: reservasParaResumo.filter((reserva) => statusEhPreReserva(reserva)).length,
+      totalPets: reservasParaResumo.filter((reserva) => reserva.temPet === true).length,
+      totalManuais: reservasParaResumo.filter((reserva) => reserva.origem === 'manual').length,
+      totalCheckout: reservasParaResumo.filter((reserva) => reserva.origem !== 'manual').length,
       faturamento,
       gruposTotal: grupos.length,
       primeiroHorario: grupos[0]?.tituloHorario ?? 'Sem horario',
@@ -4737,6 +4766,7 @@ const totalParticipantesDoDia = useMemo(() => {
     pacotes,
     combos,
     inferirPacoteIdsReserva,
+    reservaContaNoCalendario,
   ]);
 
 
@@ -5167,6 +5197,8 @@ const totalParticipantesDoDia = useMemo(() => {
         aceitaPet: data.aceitaPet === false ? false : true,
 
         perguntasPersonalizadas: Array.isArray(data.perguntasPersonalizadas) ? data.perguntasPersonalizadas : [],
+
+        contarNoCalendario: data.contarNoCalendario === false ? false : true,
 
       } as Pacote;
 
@@ -6268,6 +6300,8 @@ const totalParticipantesDoDia = useMemo(() => {
 
       perguntasPersonalizadas: pacote.perguntasPersonalizadas ?? [],
 
+      contarNoCalendario: pacote.contarNoCalendario ?? true,
+
     });
 
     setNovaDataBloqueada('');
@@ -6325,6 +6359,8 @@ const totalParticipantesDoDia = useMemo(() => {
       aceitaPet: true,
 
       perguntasPersonalizadas: [],
+
+      contarNoCalendario: true,
 
     });
 
@@ -6433,6 +6469,8 @@ const totalParticipantesDoDia = useMemo(() => {
       aceitaPet: editPacote.aceitaPet ?? true,
 
       aviso: (editPacote.aviso ?? '').trim(),
+
+      contarNoCalendario: editPacote.contarNoCalendario ?? true,
 
     };
 
@@ -12589,6 +12627,23 @@ const totalParticipantesDoDia = useMemo(() => {
 
                     />
 
+                  </label>
+
+                  <label className="md:col-span-2 flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 cursor-pointer transition hover:border-blue-300">
+                    <input
+                      type="checkbox"
+                      checked={editPacote.contarNoCalendario !== false}
+                      onChange={(e) => setEditPacote((f) => ({ ...f!, contarNoCalendario: e.target.checked }))}
+                      className="mt-0.5 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium normal-case tracking-normal text-slate-700">
+                        Contar nos indicadores do calendário
+                      </span>
+                      <span className="block text-xs normal-case tracking-normal text-slate-500">
+                        Reservas deste pacote entram nos números mostrados no calendário e no resumo do dia (agenda de reservas).
+                      </span>
+                    </span>
                   </label>
 
                   <div className="md:col-span-2 rounded-2xl border border-dashed border-[#8B4F23]/30 bg-[#8B4F23]/[0.035] p-4">
