@@ -3454,39 +3454,83 @@ export function BookingSection() {
                       <div className="space-y-2.5">
                         {tiposClientesAtivos.map((tipo) => {
                           const grupo = gruposParticipacao[0];
+                          const chaveTipo = obterChaveTipo(tipo);
                           const valor = Number(obterValorMapa(participantesPorGrupo[grupo.chave] ?? {}, tipo) ?? 0);
                           const precoUnitario = precoPorTipoNoGrupo(grupo, tipo);
+                          const perguntarIdadeAtivo = tipo.perguntarIdade === true && valor > 0;
+                          const idadesDoTipo = idadesPorGrupoETipo[grupo.chave]?.[chaveTipo] ?? [];
                           return (
-                            <div key={obterChaveTipo(tipo)} className="flex items-center justify-between gap-2">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-baseline gap-1.5 flex-wrap">
-                                  <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
-                                  {precoUnitario > 0 && (
-                                    <span className="text-[11px] font-semibold text-[#8B4F23]">
-                                      {formatCurrency(precoUnitario)} <span className="font-normal text-slate-400">/pessoa</span>
-                                    </span>
+                            <div key={chaveTipo} className="space-y-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-baseline gap-1.5 flex-wrap">
+                                    <p className="text-sm font-medium text-slate-700">{tipo.nome}</p>
+                                    {precoUnitario > 0 && (
+                                      <span className="text-[11px] font-semibold text-[#8B4F23]">
+                                        {formatCurrency(precoUnitario)} <span className="font-normal text-slate-400">/pessoa</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                  {tipo.descricao && (
+                                    <p className="text-[10px] text-slate-400 truncate">{tipo.descricao}</p>
                                   )}
                                 </div>
-                                {tipo.descricao && (
-                                  <p className="text-[10px] text-slate-400 truncate">{tipo.descricao}</p>
-                                )}
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => atualizarParticipantesGrupo(grupo.chave, tipo, -1)}
+                                    disabled={valor <= 0}
+                                    className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-lg disabled:opacity-30 disabled:cursor-not-allowed"
+                                    aria-label={`Diminuir ${tipo.nome}`}
+                                  >−</button>
+                                  <span className="w-7 text-center text-base font-bold tabular-nums">{valor}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => atualizarParticipantesGrupo(grupo.chave, tipo, 1)}
+                                    className="w-9 h-9 rounded-full bg-[#8B4F23] hover:bg-[#A05D2B] text-white font-bold text-lg"
+                                    aria-label={`Aumentar ${tipo.nome}`}
+                                  >+</button>
+                                </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => atualizarParticipantesGrupo(grupo.chave, tipo, -1)}
-                                  disabled={valor <= 0}
-                                  className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-lg disabled:opacity-30 disabled:cursor-not-allowed"
-                                  aria-label={`Diminuir ${tipo.nome}`}
-                                >−</button>
-                                <span className="w-7 text-center text-base font-bold tabular-nums">{valor}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => atualizarParticipantesGrupo(grupo.chave, tipo, 1)}
-                                  className="w-9 h-9 rounded-full bg-[#8B4F23] hover:bg-[#A05D2B] text-white font-bold text-lg"
-                                  aria-label={`Aumentar ${tipo.nome}`}
-                                >+</button>
-                              </div>
+                              {perguntarIdadeAtivo && (
+                                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                                    Idade de cada {tipo.nome.toLowerCase()} <span className="text-red-500">*</span>
+                                  </p>
+                                  <div className="grid grid-cols-3 gap-2">
+                                    {Array.from({ length: valor }, (_, idx) => {
+                                      const idadeValor = idadesDoTipo[idx] ?? "";
+                                      return (
+                                        <label key={`${grupo.chave}-${chaveTipo}-idade-${idx}`} className="flex flex-col">
+                                          <span className="text-[10px] font-semibold text-slate-500">#{idx + 1}</span>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            max={120}
+                                            inputMode="numeric"
+                                            value={idadeValor}
+                                            onChange={(e) => {
+                                              const novoValor = e.target.value;
+                                              setIdadesPorGrupoETipo((prev) => {
+                                                const grupoAtual = { ...(prev[grupo.chave] ?? {}) };
+                                                const arrAtual = Array.isArray(grupoAtual[chaveTipo])
+                                                  ? [...grupoAtual[chaveTipo]]
+                                                  : Array.from({ length: valor }, () => "");
+                                                while (arrAtual.length < valor) arrAtual.push("");
+                                                arrAtual[idx] = novoValor;
+                                                grupoAtual[chaveTipo] = arrAtual;
+                                                return { ...prev, [grupo.chave]: grupoAtual };
+                                              });
+                                            }}
+                                            placeholder="anos"
+                                            className="mt-0.5 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-sm text-slate-800 focus:border-[#8B4F23] focus:outline-none focus:ring-1 focus:ring-[#8B4F23]/40"
+                                          />
+                                        </label>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
