@@ -2061,6 +2061,29 @@ export function BookingSection() {
         errors.participantes = `Restam apenas ${restante} vaga(s) para ${pacoteSemVaga.nome}.`;
       }
 
+      if (!errors.participantes) {
+        for (const grupo of gruposParticipacao) {
+          const quantidadesGrupo = participantesPorGrupo[grupo.chave] ?? {};
+          const tipoComIdadeFaltando = tiposClientesAtivos.find((tipo) => {
+            if (!tipo.perguntarIdade) return false;
+            const valor = Number(obterValorMapa(quantidadesGrupo, tipo) ?? 0);
+            if (valor <= 0) return false;
+            const chaveTipo = obterChaveTipo(tipo);
+            const idadesDoTipo = idadesPorGrupoETipo[grupo.chave]?.[chaveTipo] ?? [];
+            return Array.from({ length: valor }, (_, i) => idadesDoTipo[i]).some((idadeStr) => {
+              const valorLimpo = (idadeStr ?? "").trim();
+              if (!valorLimpo) return true;
+              const idadeNum = Number(valorLimpo);
+              return !Number.isFinite(idadeNum) || idadeNum < 0 || idadeNum > 120;
+            });
+          });
+          if (tipoComIdadeFaltando) {
+            errors.participantes = `Informe a idade de cada ${tipoComIdadeFaltando.nome.toLowerCase()} em "${grupo.nome}".`;
+            break;
+          }
+        }
+      }
+
       if (temPet === null) {
         errors.pet = "Informe se vai levar pet.";
       }
