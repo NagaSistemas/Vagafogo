@@ -26,6 +26,21 @@ const normalizarMapa = (mapa?: Record<string, number>) => {
   );
 };
 
+const normalizarIdadesPorTipo = (mapa?: Record<string, number[]>) => {
+  if (!mapa || typeof mapa !== "object") return undefined;
+  const normalizado: Record<string, number[]> = {};
+  Object.entries(mapa).forEach(([chave, valores]) => {
+    if (!Array.isArray(valores)) return;
+    const idades = valores
+      .map((valor) => Number(valor))
+      .filter((valor) => Number.isFinite(valor) && valor >= 0 && valor <= 120);
+    if (idades.length > 0) {
+      normalizado[chave] = idades;
+    }
+  });
+  return Object.keys(normalizado).length > 0 ? normalizado : undefined;
+};
+
 const normalizarGruposParticipacao = (grupos?: GrupoParticipacaoPayload[]) => {
   if (!Array.isArray(grupos)) return [];
   return grupos
@@ -41,6 +56,7 @@ const normalizarGruposParticipacao = (grupos?: GrupoParticipacaoPayload[]) => {
             .map((id) => id?.toString().trim())
             .filter((id): id is string => Boolean(id))
         : [];
+      const idadesPorTipo = normalizarIdadesPorTipo(grupo.idadesPorTipo);
       return {
         tipo: grupo.tipo === "combo" ? "combo" : "pacote",
         refId,
@@ -48,6 +64,7 @@ const normalizarGruposParticipacao = (grupos?: GrupoParticipacaoPayload[]) => {
         pacoteIds,
         participantesPorTipo,
         participantes,
+        ...(idadesPorTipo ? { idadesPorTipo } : {}),
       };
     })
     .filter(
