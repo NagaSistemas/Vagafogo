@@ -4006,7 +4006,7 @@ export function BookingSection() {
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {[
                         { id: "PIX", label: "PIX", desc: "Confirmação instantânea", icon: "⚡" },
-                        { id: "CREDIT_CARD", label: "Cartão de crédito", desc: "Parcele em até 12x", icon: "💳" },
+                        { id: "CREDIT_CARD", label: "Cartão de crédito", desc: "Pagamento único, à vista", icon: "💳" },
                       ].map((m) => {
                         const ativo = formaPagamento === (m.id as "PIX" | "CREDIT_CARD");
                         return (
