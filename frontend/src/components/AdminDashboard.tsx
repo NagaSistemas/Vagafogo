@@ -178,6 +178,15 @@ const montarMensagemWhatsApp = (template: string, dados: Record<string, string>)
     return valor !== undefined ? valor : match;
   });
 
+const montarLinkEnvioWhatsapp = (telefone: string, mensagem: string) => {
+  const url = new URL('https://api.whatsapp.com/send');
+  url.searchParams.set('phone', telefone);
+  url.searchParams.set('text', mensagem);
+  url.searchParams.set('type', 'phone_number');
+  url.searchParams.set('app_absent', '0');
+  return url.toString();
+};
+
 const normalizarTelefoneWhatsapp = (telefone?: string) => {
   const digits = (telefone ?? '').replace(/\D/g, '');
   if (!digits || digits.length < 10) return '';
@@ -319,6 +328,10 @@ interface Combo {
   id?: string;
 
   nome: string;
+
+  iconeUrl?: string;
+
+  iconeStoragePath?: string;
 
   pacoteIds: string[];
 
@@ -685,11 +698,30 @@ function ReservaPerguntasResumo({
     );
   }
 
+  const formatarResposta = (pergunta: string, resposta: string) => {
+    const perguntaNormalizada = pergunta
+      .toLocaleLowerCase('pt-BR')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    const pedeNome = /\b(quem|nome|titular)\b/.test(perguntaNormalizada);
+    const texto = resposta
+      .trim()
+      .replace(/([a-záàâãéèêíïóôõöúç])([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇ])/g, '$1 $2');
+    return pedeNome ? texto.split(/\s+/)[0] : resposta.trim();
+  };
+
   // Coleta todas as respostas (principal + condicional) num array plano
   const respostas: string[] = [];
   perguntas.forEach((p) => {
-    if (p.resposta) respostas.push(p.resposta);
-    if (p.perguntaCondicional?.resposta) respostas.push(p.perguntaCondicional.resposta);
+    if (p.resposta) respostas.push(formatarResposta(p.pergunta, p.resposta));
+    if (p.perguntaCondicional?.resposta) {
+      respostas.push(
+        formatarResposta(
+          p.perguntaCondicional.pergunta,
+          p.perguntaCondicional.resposta
+        )
+      );
+    }
   });
 
   return (
@@ -722,16 +754,41 @@ function ReservaRespostasDetalhes({
     return '';
   };
 
+  const formatarResposta = (pergunta: string, resposta?: string) => {
+    const texto = resposta?.trim() ?? '';
+    const perguntaNormalizada = pergunta
+      .toLocaleLowerCase('pt-BR')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    const pedeNome = /\b(quem|nome|titular)\b/.test(perguntaNormalizada);
+    const textoComEspacos = texto.replace(/([a-záàâãéèêíïóôõöúç])([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÖÚÇ])/g, '$1 $2');
+    return pedeNome ? textoComEspacos.split(/\s+/)[0] : texto;
+  };
+
+  const formatarPerguntaCompacta = (pergunta: string) => {
+    const perguntaNormalizada = pergunta
+      .toLocaleLowerCase('pt-BR')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    if (perguntaNormalizada.includes('quem') && perguntaNormalizada.includes('reserva')) {
+      return 'Reserva vinculada';
+    }
+    return pergunta;
+  };
+
   const respostas = perguntas.flatMap((pergunta) => {
     const principal = {
       pergunta: pergunta.pergunta,
-      resposta: pergunta.resposta,
+      resposta: formatarResposta(pergunta.pergunta, pergunta.resposta),
       emoji: obterEmojiDaResposta(pergunta.resposta, pergunta.emojiSim, pergunta.emojiNao),
     };
     const condicional = pergunta.perguntaCondicional?.pergunta && pergunta.perguntaCondicional.resposta?.trim()
       ? [{
           pergunta: pergunta.perguntaCondicional.pergunta,
-          resposta: pergunta.perguntaCondicional.resposta,
+          resposta: formatarResposta(
+            pergunta.perguntaCondicional.pergunta,
+            pergunta.perguntaCondicional.resposta
+          ),
           emoji: obterEmojiDaResposta(
             pergunta.perguntaCondicional.resposta,
             pergunta.perguntaCondicional.emojiSim,
@@ -751,7 +808,9 @@ function ReservaRespostasDetalhes({
             key={`${resposta.pergunta}-${index}`}
             className="admin-resumo-respostas__item"
           >
-            <p className="admin-resumo-respostas__question">{resposta.pergunta}</p>
+            <p className="admin-resumo-respostas__question" title={resposta.pergunta}>
+              {formatarPerguntaCompacta(resposta.pergunta)}
+            </p>
             <p className="admin-resumo-respostas__answer">
               {resposta.emoji ? (
                 <span
@@ -1762,6 +1821,12 @@ export default function AdminDashboard() {
   const [isEditingCombo, setIsEditingCombo] = useState(false);
 
   const [salvandoCombo, setSalvandoCombo] = useState(false);
+
+  const [iconeComboArquivo, setIconeComboArquivo] = useState<File | null>(null);
+
+  const [iconeComboPreview, setIconeComboPreview] = useState('');
+
+  const [removerIconeCombo, setRemoverIconeCombo] = useState(false);
 
   const [disponibilidadeData, setDisponibilidadeData] = useState<Record<string, boolean>>({});
   const [vagasExtrasDisponibilidade, setVagasExtrasDisponibilidade] = useState<Record<string, number>>({});
@@ -4481,7 +4546,6 @@ const totalParticipantesDoDia = useMemo(() => {
   const extrairIdadesPorLabel = useCallback(
     (reserva: Reserva) => {
       const grupos = Array.isArray(reserva.gruposParticipacao) ? reserva.gruposParticipacao : [];
-      if (grupos.length === 0) return [] as Array<{ label: string; idades: number[] }>;
       const acumulado = new Map<string, { label: string; idades: number[] }>();
       grupos.forEach((grupo) => {
         const mapaIdades = grupo?.idadesPorTipo;
@@ -4501,6 +4565,22 @@ const totalParticipantesDoDia = useMemo(() => {
           acumulado.set(label, atual);
         });
       });
+
+      tiposClientesAtivos
+        .filter((tipo) => {
+          const nome = normalizarTexto(tipo.nome);
+          return tipo.perguntarIdade === true || nome.includes('crian');
+        })
+        .forEach((tipo) => {
+          const quantidadeAtual = obterValorMapa(reserva.participantesPorTipo, tipo);
+          const quantidadeLegada = obterQuantidadeLegada(tipo, reserva);
+          const quantidade = Number.isFinite(quantidadeAtual)
+            ? Number(quantidadeAtual)
+            : quantidadeLegada;
+          if (quantidade <= 0 || acumulado.has(tipo.nome)) return;
+          acumulado.set(tipo.nome, { label: tipo.nome, idades: [] });
+        });
+
       return Array.from(acumulado.values()).sort((a, b) =>
         compararTextoNumericamente(a.label, b.label)
       );
@@ -4622,6 +4702,18 @@ const totalParticipantesDoDia = useMemo(() => {
       .split('+')
       .map((item) => item.trim())
       .filter(Boolean);
+  };
+
+  const obterNomeCurtoPacote = (etiqueta: string) => {
+    if (/^combo\s*:/i.test(etiqueta.trim())) {
+      return 'Combo';
+    }
+
+    const nomeSemPrefixo = etiqueta
+      .replace(/^(?:(?:combo|pacote)\s*:?\s*)+/i, '')
+      .trim();
+
+    return nomeSemPrefixo.split(/\s+/)[0] || 'Pacote';
   };
 
   const reservasAgendaResumo = useMemo(() => {
@@ -5879,7 +5971,7 @@ const totalParticipantesDoDia = useMemo(() => {
       return;
     }
 
-    const link = `https://wa.me/${whatsappEnvioModal.telefoneDestino}?text=${encodeURIComponent(texto)}`;
+    const link = montarLinkEnvioWhatsapp(whatsappEnvioModal.telefoneDestino, texto);
     const janela = window.open(link, '_blank');
     if (!janela) {
       setFeedback({ type: 'error', message: 'Não foi possível abrir o WhatsApp. Verifique o bloqueador de pop-ups.' });
@@ -5929,6 +6021,10 @@ const totalParticipantesDoDia = useMemo(() => {
           id: docSnap.id,
 
           nome: data.nome ?? '',
+
+          iconeUrl: typeof data.iconeUrl === 'string' ? data.iconeUrl : '',
+
+          iconeStoragePath: typeof data.iconeStoragePath === 'string' ? data.iconeStoragePath : '',
 
           pacoteIds: Array.isArray(data.pacoteIds) ? data.pacoteIds.map((id) => id?.toString()).filter(Boolean) : [],
 
@@ -6274,6 +6370,41 @@ const totalParticipantesDoDia = useMemo(() => {
     setIconePacoteArquivo(null);
     setIconePacotePreview('');
     setRemoverIconePacote(false);
+  };
+
+  const handleSelecionarIconeCombo = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const arquivo = event.target.files?.[0];
+    if (!arquivo) return;
+
+    if (arquivo.type !== 'image/png') {
+      setFeedback({ type: 'error', message: 'Escolha uma imagem PNG para o ícone do combo.' });
+      event.target.value = '';
+      return;
+    }
+
+    if (arquivo.size > 2 * 1024 * 1024) {
+      setFeedback({ type: 'error', message: 'O ícone deve ter no máximo 2 MB.' });
+      event.target.value = '';
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => setIconeComboPreview(typeof reader.result === 'string' ? reader.result : '');
+    reader.readAsDataURL(arquivo);
+    setIconeComboArquivo(arquivo);
+    setRemoverIconeCombo(false);
+  };
+
+  const limparIconeCombo = () => {
+    setIconeComboArquivo(null);
+    setIconeComboPreview('');
+    setRemoverIconeCombo(true);
+  };
+
+  const resetarEstadoIconeCombo = () => {
+    setIconeComboArquivo(null);
+    setIconeComboPreview('');
+    setRemoverIconeCombo(false);
   };
 
   const handleEditPacote = (pacote: Pacote) => {
@@ -6689,6 +6820,8 @@ const totalParticipantesDoDia = useMemo(() => {
 
   const handleAddCombo = () => {
 
+    resetarEstadoIconeCombo();
+
     setEditCombo({
 
       nome: '',
@@ -6726,6 +6859,8 @@ const totalParticipantesDoDia = useMemo(() => {
 
 
   const handleEditCombo = (combo: Combo) => {
+
+    resetarEstadoIconeCombo();
 
     setEditCombo({
 
@@ -6867,6 +7002,30 @@ const totalParticipantesDoDia = useMemo(() => {
 
     try {
 
+      const comboRef = editCombo.id
+        ? doc(db, 'combos', editCombo.id)
+        : doc(collection(db, 'combos'));
+      const caminhoIconeAnterior = editCombo.iconeStoragePath ?? '';
+      let iconeUrl = removerIconeCombo ? '' : editCombo.iconeUrl ?? '';
+      let iconeStoragePath = removerIconeCombo ? '' : caminhoIconeAnterior;
+
+      if (iconeComboArquivo) {
+        const nomeSeguro = iconeComboArquivo.name
+          .replace(/[^a-zA-Z0-9._-]/g, '-')
+          .replace(/-+/g, '-')
+          .toLowerCase();
+        const caminhoNovo = `combos/icones/${comboRef.id}/${Date.now()}-${nomeSeguro || 'icone.png'}`;
+        const referenciaIcone = ref(storage, caminhoNovo);
+
+        await uploadBytes(referenciaIcone, iconeComboArquivo, {
+          contentType: 'image/png',
+          cacheControl: 'public,max-age=31536000,immutable',
+        });
+
+        iconeUrl = await getDownloadURL(referenciaIcone);
+        iconeStoragePath = caminhoNovo;
+      }
+
       const payload = {
 
         nome,
@@ -6885,25 +7044,41 @@ const totalParticipantesDoDia = useMemo(() => {
 
         ativo: editCombo.ativo !== false,
 
+        iconeUrl,
+
+        iconeStoragePath,
+
       };
 
       if (isEditingCombo && editCombo.id) {
 
-        await updateDoc(doc(db, 'combos', editCombo.id), payload);
+        await updateDoc(comboRef, payload);
 
         setFeedback({ type: 'success', message: 'Combo atualizado com sucesso!' });
 
       } else {
 
-        await addDoc(collection(db, 'combos'), payload);
+        await setDoc(comboRef, payload);
 
         setFeedback({ type: 'success', message: 'Combo criado com sucesso!' });
 
       }
 
+      if (
+        caminhoIconeAnterior &&
+        caminhoIconeAnterior !== iconeStoragePath &&
+        (iconeComboArquivo || removerIconeCombo)
+      ) {
+        void deleteObject(ref(storage, caminhoIconeAnterior)).catch((error) => {
+          console.warn('Não foi possível remover o ícone anterior do combo:', error);
+        });
+      }
+
       setModalCombo(false);
 
       setEditCombo(null);
+
+      resetarEstadoIconeCombo();
 
       fetchCombos();
 
@@ -10503,7 +10678,6 @@ const totalParticipantesDoDia = useMemo(() => {
                   <span role="columnheader">Respostas</span>
                   <span role="columnheader">Pet</span>
                   <span role="columnheader">Valor</span>
-                  <span role="columnheader">Status</span>
                   <span role="columnheader">Acoes</span>
                 </div>
 
@@ -10545,29 +10719,53 @@ const totalParticipantesDoDia = useMemo(() => {
                             .map((reserva) => {
                         const participantes = calcularParticipantes(reserva);
                         const resumoParticipantes = montarResumoParticipantes(reserva);
-                        const statusBadge = obterBadgeStatus(reserva);
                         const chegou = reserva.chegou === true;
                         const reservaToneClass = chegou
                           ? 'admin-reservas-tone--arrived'
                           : 'admin-reservas-tone--pending';
                         const pacoteDescricao = formatarPacote(reserva);
                         const pacotesEtiquetas = quebrarPacoteEmEtiquetas(pacoteDescricao);
-                        const pacotesRelacionados = inferirPacoteIdsReserva(reserva)
+                        const pacoteIdsReserva = inferirPacoteIdsReserva(reserva);
+                        const pacotesRelacionados = pacoteIdsReserva
                           .map((pacoteId) => pacotesPorId.get(pacoteId))
                           .filter((pacote): pacote is Pacote => Boolean(pacote));
-                        const pacotesVisuais = pacotesEtiquetas.map((etiqueta, index) => {
+                        const idsPacotesOrdenados = Array.from(new Set(pacoteIdsReserva)).sort();
+                        const reservaEhCombo = /^combo:\s*/i.test(pacoteDescricao);
+                        const nomeComboReserva = normalizarTexto(
+                          pacoteDescricao.replace(/^combo:\s*/i, '')
+                        );
+                        const comboRelacionado = reservaEhCombo
+                          ? combos.find(
+                              (combo) => normalizarTexto(combo.nome) === nomeComboReserva
+                            ) ?? combos.find((combo) => {
+                              const idsCombo = Array.from(new Set(combo.pacoteIds ?? [])).sort();
+                              return (
+                                idsCombo.length === idsPacotesOrdenados.length &&
+                                idsCombo.every((id, index) => id === idsPacotesOrdenados[index])
+                              );
+                            })
+                          : undefined;
+                        const pacotesVisuais = comboRelacionado
+                          ? [{
+                              etiqueta: `Combo: ${comboRelacionado.nome}`,
+                              iconeUrl: comboRelacionado.iconeUrl ?? '',
+                            }]
+                          : pacotesEtiquetas.map((etiqueta, index) => {
                           const etiquetaNormalizada = normalizarTexto(
                             etiqueta.replace(/^combo:\s*/i, '')
                           );
-                          const pacoteRelacionado =
-                            pacotesRelacionados.find((pacote) => {
+                          const correspondeAoNome = (pacote: Pacote) => {
                               const nomeNormalizado = normalizarTexto(pacote.nome);
                               return (
                                 nomeNormalizado &&
                                 (etiquetaNormalizada.includes(nomeNormalizado) ||
                                   nomeNormalizado.includes(etiquetaNormalizada))
                               );
-                            }) ?? pacotesRelacionados[index];
+                            };
+                          const pacoteRelacionado =
+                            pacotesRelacionados.find(correspondeAoNome) ??
+                            pacotes.find(correspondeAoNome) ??
+                            pacotesRelacionados[index];
 
                           return {
                             etiqueta,
@@ -10575,6 +10773,8 @@ const totalParticipantesDoDia = useMemo(() => {
                           };
                         });
                         const valorFormatado = formatarValor(reserva.valor);
+                        const nomeClienteResumido =
+                          reserva.nome?.trim().split(/\s+/).slice(0, 2).join(' ') || '---';
                         const podeEnviarWhatsapp = Boolean(
                           normalizarTelefoneWhatsapp(reserva.telefone)
                         );
@@ -10599,7 +10799,7 @@ const totalParticipantesDoDia = useMemo(() => {
                               role="cell"
                             >
                               <div className="admin-reservation-list__client-name">
-                                <strong>{reserva.nome || '---'}</strong>
+                                <strong title={reserva.nome || undefined}>{nomeClienteResumido}</strong>
                                 {reservaManual && (
                                   <span className="admin-reservas-origin-badge">Manual</span>
                                 )}
@@ -10613,11 +10813,18 @@ const totalParticipantesDoDia = useMemo(() => {
                               data-label="Participantes"
                               role="cell"
                             >
-                              <strong>{participantes} pessoa{participantes !== 1 ? 's' : ''}</strong>
-                              <div className="admin-reservation-list__inline-tags">
+                              <div className="admin-reservation-list__participants-total">
+                                <strong>{participantes}</strong>
+                                <span>pessoa{participantes !== 1 ? 's' : ''}</span>
+                              </div>
+                              <div className="admin-reservation-list__inline-tags admin-reservation-list__participant-tags">
                                 {resumoParticipantes.map((item) => (
-                                  <span key={`${reservaKey}-participante-${item.key}`}>
-                                    {item.label}: {item.quantidade}
+                                  <span
+                                    key={`${reservaKey}-participante-${item.key}`}
+                                    className="admin-reservation-list__participant-tag"
+                                  >
+                                    <span>{item.label}</span>
+                                    <strong>{item.quantidade}</strong>
                                   </span>
                                 ))}
                               </div>
@@ -10629,10 +10836,16 @@ const totalParticipantesDoDia = useMemo(() => {
                                     {idadesResumo.map((item) => (
                                       <span
                                         key={`${reservaKey}-idades-${item.label}`}
-                                        className="admin-reservation-list__age-tag"
-                                        title={`Idades informadas para ${item.label}`}
+                                        className={`admin-reservation-list__age-tag ${item.idades.length === 0 ? 'is-missing' : ''}`}
+                                        title={
+                                          item.idades.length > 0
+                                            ? `Idades informadas para ${item.label}`
+                                            : `A reserva não possui idade salva para ${item.label}`
+                                        }
                                       >
-                                        {item.label}: {item.idades.join(', ')} anos
+                                        {item.idades.length > 0
+                                          ? `${item.label}: ${item.idades.join(', ')} anos`
+                                          : `${item.label}: idade não informada`}
                                       </span>
                                     ))}
                                   </div>
@@ -10646,30 +10859,27 @@ const totalParticipantesDoDia = useMemo(() => {
                               role="cell"
                             >
                               <div className="admin-reservation-list__inline-tags">
-                                {pacotesVisuais.length > 0 ? (
-                                  pacotesVisuais.map((item) => (
+                                {pacotesVisuais.some((item) => Boolean(item.iconeUrl)) ? (
+                                  pacotesVisuais.filter((item) => Boolean(item.iconeUrl)).map((item) => (
                                     <span
                                       key={`${reservaKey}-pacote-${item.etiqueta}`}
-                                      className="admin-reservation-list__package-tag"
+                                      className="admin-reservation-list__package-tag is-compact"
+                                      title={[
+                                        item.etiqueta,
+                                        mesasDaReserva.length > 0
+                                          ? `Mesa: ${mesasDaReserva.map((mesa) => mesa.nome).join(', ')}`
+                                          : '',
+                                      ].filter(Boolean).join(' • ')}
+                                      aria-label={item.etiqueta}
                                     >
-                                      {item.iconeUrl ? (
-                                        <img src={item.iconeUrl} alt="" aria-hidden="true" />
-                                      ) : (
-                                        <FaLayerGroup className="h-3 w-3" aria-hidden="true" />
-                                      )}
-                                      <span>{item.etiqueta}</span>
+                                      <img src={item.iconeUrl} alt="" aria-hidden="true" />
+                                      <span>{obterNomeCurtoPacote(item.etiqueta)}</span>
                                     </span>
                                   ))
                                 ) : (
-                                  <span>---</span>
+                                  <span className="admin-reservation-list__package-empty" title="Ícone não definido">—</span>
                                 )}
                               </div>
-                              {mesasDaReserva.length > 0 && (
-                                <span className="admin-reservation-list__secondary">
-                                  <FaChair className="h-3 w-3" />
-                                  {mesasDaReserva.map((mesa) => mesa.nome).join(', ')}
-                                </span>
-                              )}
                             </div>
 
                             <div
@@ -10692,7 +10902,7 @@ const totalParticipantesDoDia = useMemo(() => {
                               data-label="Pet"
                               role="cell"
                             >
-                              <PetStatusIndicator hasPet={reserva.temPet === true} />
+                              <PetStatusIndicator hasPet={reserva.temPet === true} compact />
                             </div>
 
                             <div
@@ -10701,20 +10911,6 @@ const totalParticipantesDoDia = useMemo(() => {
                               role="cell"
                             >
                               <strong>{valorFormatado}</strong>
-                            </div>
-
-                            <div
-                              className="admin-reservation-list__cell admin-reservation-list__cell--status"
-                              data-label="Status"
-                              role="cell"
-                            >
-                              <span className={`admin-reservation-list__status ${statusBadge.classes}`}>
-                                {statusBadge.label}
-                              </span>
-                              <span className={`admin-reservation-list__arrival ${chegou ? 'is-arrived' : ''}`}>
-                                <FaCheck className="h-3 w-3" />
-                                {chegou ? 'Chegou' : 'Aguardando'}
-                              </span>
                             </div>
 
                             <div
@@ -12501,6 +12697,14 @@ const totalParticipantesDoDia = useMemo(() => {
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="space-y-1">
                           <div className="flex flex-wrap items-center gap-3">
+                            {combo.iconeUrl && (
+                              <img
+                                src={combo.iconeUrl}
+                                alt=""
+                                aria-hidden="true"
+                                className="h-10 w-10 rounded-xl border border-slate-200 object-cover"
+                              />
+                            )}
                             <h4 className="text-base font-semibold text-slate-900">{combo.nome}</h4>
                             <span
                               className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -13347,6 +13551,8 @@ const totalParticipantesDoDia = useMemo(() => {
 
                       setEditCombo(null);
 
+                      resetarEstadoIconeCombo();
+
                     }}
 
                     className="rounded-full border border-slate-200 p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
@@ -13376,6 +13582,55 @@ const totalParticipantesDoDia = useMemo(() => {
                     />
 
                   </label>
+
+                  <div className="rounded-2xl border border-dashed border-[#8B4F23]/30 bg-[#8B4F23]/[0.035] p-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                      <span className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[#8B4F23]/15 bg-white text-[#8B4F23] shadow-sm">
+                        {iconeComboPreview || (!removerIconeCombo && editCombo.iconeUrl) ? (
+                          <img
+                            src={iconeComboPreview || editCombo.iconeUrl}
+                            alt="Prévia do ícone do combo"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <FaImage className="h-6 w-6" aria-hidden="true" />
+                        )}
+                      </span>
+
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold normal-case tracking-normal text-slate-800">Ícone do combo</p>
+                        <p className="mt-1 text-xs font-normal normal-case tracking-normal text-slate-500">
+                          Envie um PNG quadrado para identificar o combo nas reservas. Máximo de 2 MB.
+                        </p>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-[#8B4F23] px-3.5 py-2 text-xs font-semibold normal-case tracking-normal text-white shadow-sm transition hover:bg-[#70401c]">
+                            <FaImage className="h-3.5 w-3.5" />
+                            {iconeComboPreview || (!removerIconeCombo && editCombo.iconeUrl)
+                              ? 'Trocar PNG'
+                              : 'Adicionar PNG'}
+                            <input
+                              type="file"
+                              accept="image/png"
+                              onChange={handleSelecionarIconeCombo}
+                              className="sr-only"
+                            />
+                          </label>
+
+                          {(iconeComboPreview || (!removerIconeCombo && editCombo.iconeUrl)) && (
+                            <button
+                              type="button"
+                              onClick={limparIconeCombo}
+                              className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white px-3.5 py-2 text-xs font-semibold normal-case tracking-normal text-rose-600 transition hover:bg-rose-50"
+                            >
+                              <FaTrash className="h-3.5 w-3.5" />
+                              Remover
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
 
                   <div className="space-y-2">
 
@@ -13542,6 +13797,8 @@ const totalParticipantesDoDia = useMemo(() => {
                       setModalCombo(false);
 
                       setEditCombo(null);
+
+                      resetarEstadoIconeCombo();
 
                     }}
 
