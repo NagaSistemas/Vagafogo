@@ -476,6 +476,7 @@ export function BookingSection() {
   const [loading, setLoading] = useState<boolean>(false);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
   const [formaPagamento, setFormaPagamento] = useState<FormaPagamento>("CREDIT_CARD");
+  const [modalReembolsoAberto, setModalReembolsoAberto] = useState<boolean>(false);
   const [cartaoNome, setCartaoNome] = useState<string>("");
   const [cartaoNumero, setCartaoNumero] = useState<string>("");
   const [cartaoValidade, setCartaoValidade] = useState<string>("");
@@ -2196,7 +2197,7 @@ export function BookingSection() {
 
   const handleAvancarEtapa = () => {
     if (etapa === 4 && subEtapaPagamento === "metodo") {
-      handleSelecionarFormaPagamento(formaPagamento);
+      setModalReembolsoAberto(true);
       return;
     }
 
@@ -4013,7 +4014,10 @@ export function BookingSection() {
                           <button
                             key={m.id}
                             type="button"
-                            onClick={() => handleSelecionarFormaPagamento(m.id as "PIX" | "CREDIT_CARD")}
+                            onClick={() => {
+                              setFormaPagamento(m.id as "PIX" | "CREDIT_CARD");
+                              setModalReembolsoAberto(true);
+                            }}
                             className={`group relative rounded-2xl border-2 p-5 text-left transition-all duration-200 ${
                               ativo
                                 ? "border-[#8B4F23] bg-gradient-to-br from-[#8B4F23]/8 to-[#E0B13C]/8 shadow-md"
@@ -4050,6 +4054,49 @@ export function BookingSection() {
                       <p className="text-xs text-slate-600 leading-relaxed">
                         Pagamento seguro pela <strong>Asaas</strong>. Seus dados de cartão não são armazenados.
                       </p>
+                    </div>
+                  </div>
+                )}
+
+                {modalReembolsoAberto && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-6">
+                    <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-2xl">
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 flex items-start gap-2.5">
+                        <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="currentColor" viewBox="0 0 24 24">
+                          <path d="M12 2L1 21h22L12 2zm0 4l7.53 13H4.47L12 6zm-1 5v4h2v-4h-2zm0 6v2h2v-2h-2z" />
+                        </svg>
+                        <div>
+                          <p className="text-sm font-bold text-amber-900">Política de reembolso</p>
+                          <p className="mt-1 text-xs text-amber-900 leading-relaxed">
+                            {formaPagamento === "PIX"
+                              ? "Em caso de cancelamento, o reembolso via PIX é feito em até 2 dias úteis."
+                              : "Em caso de cancelamento, o reembolso no cartão de crédito é feito em até 30 dias úteis."}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalReembolsoAberto(false);
+                            handleVoltarEtapa();
+                          }}
+                          className="flex-1 rounded-xl border-2 border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300"
+                        >
+                          Não concordo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalReembolsoAberto(false);
+                            handleSelecionarFormaPagamento(formaPagamento);
+                          }}
+                          className="flex-1 rounded-xl bg-[#8B4F23] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#A05D2B]"
+                        >
+                          Concordo
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
