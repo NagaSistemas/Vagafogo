@@ -17,13 +17,18 @@ import {
   obterCamposRetencaoReservaNaAtualizacao,
   obterCamposRetencaoReservaNaCriacao,
 } from "../services/reservaRetention";
+import formulariosPublicosRouter from "./formulariosPublicos";
+import formulariosAdminRouter from "./formulariosAdmin";
 
 const router = Router();
 router.use(cors());
-router.use(express.json());
+router.use(express.json({ limit: "1mb" }));
 
 const reservasRef = collection(db, "reservas");
 const pacotesRef = collection(db, "pacotes");
+
+router.use("/formularios/publico", formulariosPublicosRouter);
+router.use("/formularios/admin", formulariosAdminRouter);
 
 router.get("/reservas", async (_req, res) => {
   try {

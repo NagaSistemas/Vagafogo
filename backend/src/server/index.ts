@@ -1,4 +1,4 @@
-import express from "express";
+import express, { ErrorRequestHandler } from "express";
 import cors from "cors";
 import { criarCobrancaHandler } from "../services/assas";
 import "dotenv/config";
@@ -28,10 +28,16 @@ import {
 
 const app = express();
 
+// Railway encaminha o IP original por um unico proxy. Necessario para que o
+// rate limit das submissoes publicas nao trate todos os visitantes como um so.
+app.set("trust proxy", 1);
+
 // Permitir requisições do localhost:5173 (seu front-end)
 app.use(cors());
 
-app.use(express.json());
+// Formularios extensos podem ultrapassar o default de 100 KB do body-parser.
+// A validacao de dominio ainda limita o documento normalizado antes do Firestore.
+app.use(express.json({ limit: "1mb" }));
 
 // Health check
 app.get('/health', (req, res) => {
@@ -342,6 +348,26 @@ app.post('/test-webhook', (req, res) => {
     res.status(500).json({ error: error.message });
   });
 });
+
+const jsonBodyErrorHandler: ErrorRequestHandler = (error: any, _req, res, next) => {
+  if (error?.type === "entity.too.large") {
+    res.status(413).json({
+      error: "O corpo da requisicao excede o tamanho maximo permitido.",
+      code: "PAYLOAD_TOO_LARGE",
+    });
+    return;
+  }
+  if (error instanceof SyntaxError && (error as any).type === "entity.parse.failed") {
+    res.status(400).json({
+      error: "O corpo JSON da requisicao e invalido.",
+      code: "INVALID_JSON",
+    });
+    return;
+  }
+  next(error);
+};
+
+app.use(jsonBodyErrorHandler);
 
 const port = process.env.PORT || 3001;
 const WHATSAPP_AUTO_START = (process.env.WHATSAPP_AUTO_START ?? "false").toLowerCase() === "true";

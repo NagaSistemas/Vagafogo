@@ -1,0 +1,80 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Dados da feature de formularios sao exclusivamente server-side.
+    // O Firebase Admin SDK usado pelo backend ignora estas regras.
+    match /formularios/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /_formularios_public_ids/{document=**} {
+      allow read, write: if false;
+    }
+
+    match /_formularios_admin_idempotency/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reserva defensiva caso respostas sejam migradas para uma colecao raiz.
+    match /respostas/{document=**} {
+      allow read, write: if false;
+    }
+
+    // Colecoes publicas consumidas diretamente pelo site atual.
+    match /pacotes/{documentId} {
+      // O backend legado usa o Web SDK sem login para listar e criar pacotes.
+      allow read, create: if true;
+      allow update, delete: if isSignedIn();
+    }
+
+    match /tipos_clientes/{documentId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
+    }
+
+    match /combos/{documentId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
+    }
+
+    match /disponibilidade/{documentId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
+    }
+
+    // Compatibilidade: site e backend legado usam o Web SDK sem login.
+    // Nao e possivel distinguir esse backend de outro cliente anonimo nas regras.
+    match /reservas/{documentId} {
+      allow read, write: if true;
+    }
+
+    // O backend legado le configuracoes com o Web SDK sem login e atualiza a
+    // cota de e-mail. A listagem da colecao continua restrita ao painel.
+    match /configuracoes/{configId} {
+      allow get: if configId in [
+        'site',
+        'email',
+        'mensagens',
+        'whatsapp',
+        'emailQuota'
+      ] || isSignedIn();
+      allow list: if isSignedIn();
+      allow create, update: if configId == 'emailQuota' || isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    // Colecoes usadas apenas dentro do painel/diagnostico legado.
+    match /mesas/{documentId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+
+    match /teste_conexao/{documentId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+  }
+}

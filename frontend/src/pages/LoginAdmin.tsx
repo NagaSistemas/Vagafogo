@@ -21,21 +21,6 @@ export function LoginAdmin() {
     }
     setLoading(true);
 
-    // Login temporário que funciona apenas uma vez
-    if (email === "temp@admin.com" && password === "temp123") {
-      const used = localStorage.getItem("tempLoginUsed");
-      if (used) {
-        setErro("Login temporário já foi utilizado!");
-        setLoading(false);
-        return;
-      }
-      localStorage.setItem("tempLoginUsed", "true");
-      localStorage.setItem("tempAuth", "authenticated");
-      navigate("/admin");
-      setLoading(false);
-      return;
-    }
-
     try {
       await signInWithEmailAndPassword(auth, email, password);
       navigate("/admin");

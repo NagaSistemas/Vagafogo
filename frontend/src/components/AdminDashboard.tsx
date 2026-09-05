@@ -37,6 +37,10 @@ import './AdminDashboardTheme.css';
 
 import localizedFormat from 'dayjs/plugin/localizedFormat';
 
+const AdminForms = React.lazy(() =>
+  import('../features/forms/AdminForms').then((module) => ({ default: module.AdminForms })),
+);
+
 dayjs.extend(localizedFormat);
 
 dayjs.locale('pt-br');
@@ -393,6 +397,7 @@ type AdminAba =
   | 'tipos_clientes'
   | 'email'
   | 'whatsapp'
+  | 'formularios'
   | 'configuracoes';
 
 type WhatsappConnectionStatus = 'idle' | 'initializing' | 'qr' | 'ready' | 'auth_failure' | 'disconnected';
@@ -1501,7 +1506,15 @@ const obterApresentacaoReserva = (reserva: Reserva, participantes: number) => {
 
 export default function AdminDashboard() {
 
-  const [aba, setAba] = useState<AdminAba>('reservas');
+  const [aba, setAba] = useState<AdminAba>(() => {
+    if (typeof window === 'undefined') return 'reservas';
+    const requestedTab = new URLSearchParams(window.location.search).get('aba');
+    const validTabs: AdminAba[] = [
+      'dashboard', 'reservas', 'pacotes', 'pesquisa', 'tipos_clientes',
+      'email', 'whatsapp', 'formularios', 'configuracoes',
+    ];
+    return validTabs.includes(requestedTab as AdminAba) ? requestedTab as AdminAba : 'reservas';
+  });
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -1521,6 +1534,14 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     abaAtualRef.current = aba;
+  }, [aba]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (aba === 'reservas') url.searchParams.delete('aba');
+    else url.searchParams.set('aba', aba);
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   }, [aba]);
 
   // Pré-carrega o áudio e desbloqueia o autoplay na primeira interação do usuário
@@ -3215,6 +3236,8 @@ const totalParticipantesDoDia = useMemo(() => {
     { id: 'email', label: 'Email', description: 'Confirmações automáticas', icon: FaEnvelope },
 
     { id: 'whatsapp', label: 'WhatsApp', description: 'QR e disparador', icon: FaWhatsapp },
+
+    { id: 'formularios', label: 'Formulários', description: 'Criação, QR e respostas', icon: FaClipboardList },
 
     { id: 'pesquisa', label: 'Pesquisa', description: 'Histórico de reservas', icon: FaSearch },
 
@@ -15958,6 +15981,12 @@ const totalParticipantesDoDia = useMemo(() => {
 
         </section>
 
+      )}
+
+      {aba === 'formularios' && (
+        <React.Suspense fallback={<div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Carregando formulários...</div>}>
+          <AdminForms />
+        </React.Suspense>
       )}
 
       {aba === 'configuracoes' && (
